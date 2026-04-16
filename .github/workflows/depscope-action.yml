@@ -1,0 +1,19 @@
+name: DepScope Dependency Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Monday at 6am
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: DepScope Audit
+        uses: vincenzorubino27031980/depscope@main
+        with:
+          ecosystem: npm
