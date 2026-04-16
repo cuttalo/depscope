@@ -1,0 +1,35 @@
+name: 'DepScope Audit'
+description: 'Check the health of your project dependencies using DepScope'
+branding:
+  icon: 'shield'
+  color: 'blue'
+inputs:
+  ecosystem:
+    description: 'Package ecosystem (npm, pypi, cargo)'
+    required: true
+    default: 'npm'
+runs:
+  using: 'composite'
+  steps:
+    - name: Check dependencies
+      shell: bash
+      run: |
+        if [ "${{ inputs.ecosystem }}" = "npm" ] && [ -f "package.json" ]; then
+          DEPS=$(cat package.json | jq -r '.dependencies // {} | keys[]' | head -20 | tr '\n' ',' | sed 's/,$//')
+          echo "Checking npm packages: $DEPS"
+          for pkg in $(echo $DEPS | tr ',' '\n'); do
+            RESULT=$(curl -s "https://depscope.dev/api/check/npm/$pkg")
+            SCORE=$(echo $RESULT | jq -r '.health.score')
+            ACTION=$(echo $RESULT | jq -r '.recommendation.action')
+            echo "  $pkg: health=$SCORE/100 ($ACTION)"
+          done
+        elif [ "${{ inputs.ecosystem }}" = "pypi" ] && [ -f "requirements.txt" ]; then
+          echo "Checking PyPI packages from requirements.txt"
+          while IFS= read -r line; do
+            pkg=$(echo "$line" | sed 's/[>=<].*//' | tr -d ' ')
+            [ -z "$pkg" ] && continue
+            RESULT=$(curl -s "https://depscope.dev/api/check/pypi/$pkg")
+            SCORE=$(echo $RESULT | jq -r '.health.score')
+            echo "  $pkg: health=$SCORE/100"
+          done < requirements.txt
+        fi
