@@ -14,6 +14,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: DepScope Audit
-        uses: vincenzorubino27031980/depscope@main
+        uses: cuttalo/depscope@main
         with:
           ecosystem: npm
