@@ -553,7 +553,7 @@ async def get_github_stats_from_db(repo_url: str) -> dict | None:
 
 
 async def fetch_pub(name: str) -> dict | None:
-    """Fetch Dart/Flutter package from pub.dev."""
+    """Fetch Dart/Flutter package from pub.dev with metrics/score."""
     url = f"https://pub.dev/api/packages/{name}"
     try:
         async with aiohttp.ClientSession() as session:
@@ -567,27 +567,62 @@ async def fetch_pub(name: str) -> dict | None:
     latest_pub = data.get("latest", {}).get("pubspec", {})
     latest_version_str = data.get("latest", {}).get("version", "")
     versions_list = [v.get("version", "") for v in data.get("versions", [])]
-
-    # published dates
     last_published = data.get("latest", {}).get("published")
+
+    # Fetch metrics for downloads + license + publisher
+    downloads_weekly = 0
+    license_str = ""
+    maintainers_count = 0
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"https://pub.dev/api/packages/{name}/metrics",
+                                   timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    metrics = await resp.json()
+                    score = metrics.get("score") or {}
+                    d30 = int(score.get("downloadCount30Days", 0) or 0)
+                    downloads_weekly = d30 // 4
+                    # License derived from tags
+                    for tag in score.get("tags", []) or []:
+                        if tag.startswith("license:") and not tag.startswith("license:fsf") and not tag.startswith("license:osi"):
+                            license_str = tag.split(":", 1)[1].upper()
+                            break
+                    # Publisher counts as maintainers source
+                    for tag in score.get("tags", []) or []:
+                        if tag.startswith("publisher:"):
+                            maintainers_count = 1
+                            break
+    except Exception:
+        pass
+
+    if maintainers_count == 0:
+        authors = latest_pub.get("authors")
+        if isinstance(authors, list):
+            maintainers_count = len(authors)
+
+    # pubspec license field exists sometimes; tags are more reliable
+    repository = latest_pub.get("repository", "") or ""
+    homepage = latest_pub.get("homepage", "") or ""
+    if not homepage and repository:
+        homepage = repository
 
     return {
         "ecosystem": "pub",
         "name": name,
         "latest_version": latest_version_str,
-        "description": latest_pub.get("description", ""),
-        "license": "",
-        "homepage": latest_pub.get("homepage", ""),
-        "repository": latest_pub.get("repository", ""),
-        "downloads_weekly": 0,
-        "maintainers_count": len(latest_pub.get("authors", [])) if isinstance(latest_pub.get("authors"), list) else 0,
+        "description": latest_pub.get("description", "") or "",
+        "license": license_str,
+        "homepage": homepage,
+        "repository": repository,
+        "downloads_weekly": downloads_weekly,
+        "maintainers_count": maintainers_count,
         "deprecated": bool(data.get("isDiscontinued")),
         "deprecated_message": "Discontinued" if data.get("isDiscontinued") else None,
         "first_published": None,
         "last_published": last_published,
         "versions": versions_list[-20:],
         "all_version_count": len(versions_list),
-        "dependencies": list(latest_pub.get("dependencies", {}).keys()),
+        "dependencies": list(latest_pub.get("dependencies", {}).keys()) if isinstance(latest_pub.get("dependencies"), dict) else [],
     }
 
 
@@ -701,7 +736,12 @@ async def fetch_swift(name: str) -> dict | None:
 
 
 async def fetch_cocoapods(name: str) -> dict | None:
-    """Fetch CocoaPods package from trunk.cocoapods.org."""
+    """Fetch CocoaPods package from trunk.cocoapods.org + raw.githubusercontent spec.
+
+    The spec JSON lives at:
+      https://raw.githubusercontent.com/CocoaPods/Specs/master/Specs/{shards}/{name}/{version}/{name}.podspec.json
+    where {shards} is derived via MD5 hash of the pod name (first 3 chars split by '/').
+    """
     url = f"https://trunk.cocoapods.org/api/v1/pods/{name}"
     try:
         async with aiohttp.ClientSession() as session:
@@ -714,35 +754,82 @@ async def fetch_cocoapods(name: str) -> dict | None:
 
     versions_data = data.get("versions", [])
     versions_list = [v.get("name", "") for v in versions_data]
-    latest_version = versions_list[0] if versions_list else ""
-    last_published = versions_data[0].get("created_at") if versions_data else None
+    # CocoaPods returns versions in ASC order (oldest first) — take last
+    latest_version = versions_list[-1] if versions_list else ""
+    last_published = versions_data[-1].get("created_at") if versions_data else None
 
     owners = data.get("owners", [])
+
+    # Fetch spec for description/license/repo
+    description = ""
+    license_str = ""
+    repository = ""
+    homepage = f"https://cocoapods.org/pods/{name}"
+    if latest_version:
+        try:
+            import hashlib
+            h = hashlib.md5(name.encode()).hexdigest()
+            shards = f"{h[0]}/{h[1]}/{h[2]}"
+            spec_url = f"https://raw.githubusercontent.com/CocoaPods/Specs/master/Specs/{shards}/{name}/{latest_version}/{name}.podspec.json"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(spec_url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        spec = await resp.json(content_type=None)
+                        description = (spec.get("summary") or "").strip() or (spec.get("description") or "").strip()[:300]
+                        lic = spec.get("license")
+                        if isinstance(lic, dict):
+                            license_str = lic.get("type", "") or ""
+                        elif isinstance(lic, str):
+                            license_str = lic
+                        src = spec.get("source") or {}
+                        if isinstance(src, dict):
+                            repository = src.get("git", "") or ""
+                        hp = spec.get("homepage")
+                        if isinstance(hp, str) and hp:
+                            homepage = hp
+        except Exception:
+            pass
 
     return {
         "ecosystem": "cocoapods",
         "name": name,
         "latest_version": latest_version,
-        "description": "",
-        "license": "",
-        "homepage": f"https://cocoapods.org/pods/{name}",
-        "repository": "",
+        "description": description,
+        "license": license_str,
+        "homepage": homepage,
+        "repository": repository,
         "downloads_weekly": 0,
-        "maintainers_count": len(owners),
+        "maintainers_count": len(owners) if isinstance(owners, list) else 0,
         "deprecated": bool(data.get("deprecated")),
         "deprecated_message": data.get("deprecated_in_favor_of"),
-        "first_published": versions_data[-1].get("created_at") if versions_data else None,
+        "first_published": versions_data[0].get("created_at") if versions_data else None,
         "last_published": last_published,
-        "versions": versions_list[:20],
+        "versions": versions_list[-20:],
         "all_version_count": len(versions_list),
         "dependencies": [],
     }
 
 
 async def fetch_cpan(name: str) -> dict | None:
-    """Fetch Perl package from MetaCPAN."""
-    # CPAN uses distribution names with hyphens (e.g. Moose, Moo, DateTime)
-    url = f"https://fastapi.metacpan.org/v1/release/{name}"
+    """Fetch Perl package from MetaCPAN.
+
+    CPAN uses distribution names with hyphens (e.g. Moose, DBI, DateTime).
+    Modules with :: (e.g. LWP::UserAgent) are resolved via /v1/module/.
+    """
+    # If input looks like Module::Name, try /module first to find the release
+    release_name = name
+    if "::" in name:
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = f"https://fastapi.metacpan.org/v1/module/{name}"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        m = await resp.json()
+                        release_name = m.get("distribution", name) or name
+        except Exception:
+            pass
+
+    url = f"https://fastapi.metacpan.org/v1/release/{release_name}"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
@@ -758,72 +845,131 @@ async def fetch_cpan(name: str) -> dict | None:
 
     deps = data.get("dependency", [])
     dep_names = [d.get("module", "") for d in deps if d.get("relationship") == "requires"] if isinstance(deps, list) else []
+    # Dedup and trim
+    dep_names = list(dict.fromkeys([d for d in dep_names if d and d != "perl"]))[:50]
+
+    resources = data.get("resources") or {}
+    repo_info = resources.get("repository") or {}
+    repository = ""
+    if isinstance(repo_info, dict):
+        repository = repo_info.get("web") or repo_info.get("url") or ""
+    homepage_res = resources.get("homepage")
+    homepage = homepage_res if isinstance(homepage_res, str) and homepage_res else f"https://metacpan.org/release/{release_name}"
 
     return {
         "ecosystem": "cpan",
         "name": name,
         "latest_version": version,
-        "description": data.get("abstract", ""),
+        "description": data.get("abstract", "") or "",
         "license": lic,
-        "homepage": f"https://metacpan.org/release/{name}",
-        "repository": "",
+        "homepage": homepage,
+        "repository": repository,
         "downloads_weekly": 0,
         "maintainers_count": 1 if data.get("author") else 0,
         "deprecated": data.get("status") == "backpan",
         "deprecated_message": None,
-        "first_published": None,
+        "first_published": data.get("first", None) if isinstance(data.get("first"), str) else None,
         "last_published": data.get("date"),
         "versions": [version] if version else [],
-        "all_version_count": 0,
+        "all_version_count": 1 if version else 0,
         "dependencies": dep_names,
     }
 
 
 async def fetch_hackage(name: str) -> dict | None:
-    """Fetch Haskell package from Hackage."""
-    url = f"https://hackage.haskell.org/package/{name}.json"
+    """Fetch Haskell package from Hackage.
+
+    Hackage exposes:
+      - /package/{name}/preferred.json  -> {"normal-version": [sorted DESC]}
+      - /package/{name}-{version}  with Accept: application/json -> full metadata
+    """
+    headers = {"Accept": "application/json", "User-Agent": "DepScope/0.1 (https://depscope.dev)"}
+    base = "https://hackage.haskell.org"
+
+    # Step 1: list versions (sorted DESC, first = latest preferred)
+    versions_list_desc: list[str] = []
     try:
         async with aiohttp.ClientSession() as session:
-            headers = {"Accept": "application/json"}
-            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
+            async with session.get(f"{base}/package/{name}/preferred.json", headers=headers,
+                                   timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    d = await resp.json()
+                    if isinstance(d, dict):
+                        versions_list_desc = d.get("normal-version", []) or []
     except Exception:
+        pass
+
+    # Fallback: older endpoint .json returns {version: status}
+    if not versions_list_desc:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{base}/package/{name}.json", headers=headers,
+                                       timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        return None
+                    d = await resp.json()
+                    if isinstance(d, dict):
+                        versions_list_desc = sorted(d.keys(), reverse=True)
+        except Exception:
+            return None
+
+    if not versions_list_desc:
         return None
 
-    # Hackage .json returns a dict of version -> status
-    # Keys are version numbers
-    if not isinstance(data, dict):
-        return None
+    latest_version = versions_list_desc[0]
 
-    versions_list = list(data.keys())
-    # Sort versions, latest last
-    versions_list_sorted = sorted(versions_list)
-    latest_version = versions_list_sorted[-1] if versions_list_sorted else ""
+    # Step 2: fetch metadata for latest version
+    meta = {}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{base}/package/{name}-{latest_version}", headers=headers,
+                                   timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    meta = await resp.json()
+    except Exception:
+        meta = {}
+
+    # Repository URL extracted from description/homepage (Hackage JSON has no explicit field)
+    homepage = meta.get("homepage", "") or f"{base}/package/{name}"
+    repository = ""
+    if "github.com" in homepage.lower():
+        repository = homepage
+
+    # Author/maintainers: MetaCPAN-like split. Hackage JSON only exposes uploader + author
+    # Count as 1 if author present, else 0.
+    author = meta.get("author", "") or ""
+    maintainers_count = 1 if author else 0
+
+    description = meta.get("synopsis", "") or ""
+    if not description:
+        long_desc = meta.get("description", "") or ""
+        description = long_desc[:300]
 
     return {
         "ecosystem": "hackage",
         "name": name,
         "latest_version": latest_version,
-        "description": "",
-        "license": "",
-        "homepage": f"https://hackage.haskell.org/package/{name}",
-        "repository": "",
+        "description": description,
+        "license": meta.get("license", "") or "",
+        "homepage": homepage,
+        "repository": repository,
         "downloads_weekly": 0,
-        "maintainers_count": 0,
+        "maintainers_count": maintainers_count,
         "deprecated": False,
         "deprecated_message": None,
         "first_published": None,
-        "last_published": None,
-        "versions": versions_list_sorted[-20:],
-        "all_version_count": len(versions_list),
+        "last_published": meta.get("uploaded_at"),
+        "versions": versions_list_desc[:20],
+        "all_version_count": len(versions_list_desc),
         "dependencies": [],
     }
 
 
 async def fetch_cran(name: str) -> dict | None:
-    """Fetch R package from crandb.r-pkg.org."""
+    """Fetch R package from crandb.r-pkg.org.
+
+    Downloads from cranlogs.r-pkg.org are optional; 1s extra per call.
+    """
     url = f"https://crandb.r-pkg.org/{name}"
     try:
         async with aiohttp.ClientSession() as session:
@@ -835,21 +981,52 @@ async def fetch_cran(name: str) -> dict | None:
         return None
 
     version = data.get("Version", "")
-    versions_list = list(data.get("versions", {}).keys()) if isinstance(data.get("versions"), dict) else [version] if version else []
+    versions_field = data.get("versions")
+    if isinstance(versions_field, dict):
+        versions_list = list(versions_field.keys())
+    elif isinstance(data.get("releases"), list):
+        versions_list = list(data.get("releases"))
+    else:
+        versions_list = [version] if version else []
 
-    deps = data.get("Depends", {})
-    imports = data.get("Imports", {})
-    dep_names = list(deps.keys()) + list(imports.keys()) if isinstance(deps, dict) and isinstance(imports, dict) else []
+    deps = data.get("Depends") if isinstance(data.get("Depends"), dict) else {}
+    imports = data.get("Imports") if isinstance(data.get("Imports"), dict) else {}
+    dep_names = [k for k in list(deps.keys()) + list(imports.keys()) if k and k != "R"][:50]
+
+    # Prefer Title + Description[:200] for richer context
+    title = (data.get("Title") or "").strip().replace("\n", " ")
+    long_desc = (data.get("Description") or "").strip().replace("\n", " ")
+    description = title
+    if long_desc and len(title) < 80:
+        description = f"{title}. {long_desc[:300]}" if title else long_desc[:400]
+
+    # URL field may contain "https://... , https://..." — take first
+    url_field = (data.get("URL") or "").split(",")[0].strip() if data.get("URL") else ""
+    homepage = url_field or f"https://cran.r-project.org/package={name}"
+    repository = url_field if "github.com" in url_field.lower() else ""
+
+    # Downloads: cranlogs.r-pkg.org/downloads/total/last-week/{name}
+    downloads_weekly = 0
+    try:
+        async with aiohttp.ClientSession() as session:
+            dl_url = f"https://cranlogs.r-pkg.org/downloads/total/last-week/{name}"
+            async with session.get(dl_url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                if resp.status == 200:
+                    arr = await resp.json()
+                    if isinstance(arr, list) and arr:
+                        downloads_weekly = int(arr[0].get("downloads", 0) or 0)
+    except Exception:
+        pass
 
     return {
         "ecosystem": "cran",
         "name": name,
         "latest_version": version,
-        "description": data.get("Title", ""),
-        "license": data.get("License", ""),
-        "homepage": f"https://cran.r-project.org/package={name}",
-        "repository": "",
-        "downloads_weekly": 0,
+        "description": description,
+        "license": data.get("License", "") or "",
+        "homepage": homepage,
+        "repository": repository,
+        "downloads_weekly": downloads_weekly,
         "maintainers_count": 1 if data.get("Maintainer") else 0,
         "deprecated": False,
         "deprecated_message": None,
@@ -862,11 +1039,14 @@ async def fetch_cran(name: str) -> dict | None:
 
 
 async def fetch_conda(name: str) -> dict | None:
-    """Fetch conda-forge package from api.anaconda.org."""
+    """Fetch conda-forge package from api.anaconda.org.
+
+    ndownloads is a lifetime counter; derive weekly as ~weekly recent rate.
+    """
     url = f"https://api.anaconda.org/package/conda-forge/{name}"
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                 if resp.status != 200:
                     return None
                 data = await resp.json()
@@ -878,16 +1058,45 @@ async def fetch_conda(name: str) -> dict | None:
     if not isinstance(versions_list, list):
         versions_list = []
 
+    # Owner: single org (conda-forge/bioconda); count as 1 maintainer if owner present
+    owner = data.get("owner") or {}
+    maintainers_count = 1 if isinstance(owner, dict) and owner.get("login") else 0
+
+    # Derive weekly downloads from files[].ndownloads restricted to last ~30 days, then /4.
+    # Too expensive to fetch per-file precisely. Use ndownloads heuristic + release dates.
+    downloads_weekly = 0
+    ndl = data.get("ndownloads")
+    try:
+        if isinstance(ndl, (int, float)) and ndl > 0:
+            # Rough estimate: lifetime / weeks since created
+            from datetime import datetime, timezone
+            created = data.get("created_at") or data.get("modified_at")
+            if isinstance(created, str):
+                try:
+                    # '2015-04-11 10:15:08.727000+00:00' or ISO
+                    created_dt = datetime.fromisoformat(created.replace("Z", "+00:00").split(".")[0] + "+00:00") if "T" in created or "+" in created else datetime.strptime(created.split(".")[0], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                    weeks = max(1, (datetime.now(timezone.utc) - created_dt).days / 7)
+                    downloads_weekly = int(ndl / weeks)
+                except Exception:
+                    # Conservative fallback: /500 weeks
+                    downloads_weekly = int(ndl / 500)
+            else:
+                downloads_weekly = int(ndl / 500)
+    except Exception:
+        downloads_weekly = 0
+
+    summary = (data.get("summary") or "").strip() or (data.get("description") or "").strip()[:300]
+
     return {
         "ecosystem": "conda",
         "name": name,
         "latest_version": latest_version,
-        "description": data.get("summary", ""),
-        "license": data.get("license", ""),
-        "homepage": data.get("home", "") or data.get("dev_url", ""),
-        "repository": data.get("dev_url", "") or data.get("source_git_url", ""),
-        "downloads_weekly": 0,
-        "maintainers_count": 0,
+        "description": summary,
+        "license": data.get("license", "") or "",
+        "homepage": data.get("home", "") or data.get("dev_url", "") or "",
+        "repository": data.get("dev_url", "") or data.get("source_git_url", "") or "",
+        "downloads_weekly": downloads_weekly,
+        "maintainers_count": maintainers_count,
         "deprecated": False,
         "deprecated_message": None,
         "first_published": data.get("created_at"),
@@ -899,52 +1108,98 @@ async def fetch_conda(name: str) -> dict | None:
 
 
 async def fetch_homebrew(name: str) -> dict | None:
-    """Fetch Homebrew formula from formulae.brew.sh."""
-    url = f"https://formulae.brew.sh/api/formula/{name}.json"
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-    except Exception:
+    """Fetch Homebrew formula from formulae.brew.sh.
+
+    Also falls back to /cask/{name}.json for GUI apps / casks.
+    """
+    # Try formula first, then cask
+    urls = [
+        ("formula", f"https://formulae.brew.sh/api/formula/{name}.json"),
+        ("cask", f"https://formulae.brew.sh/api/cask/{name}.json"),
+    ]
+    data = None
+    kind = None
+    for k, u in urls:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(u, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        kind = k
+                        break
+        except Exception:
+            continue
+    if not data:
         return None
 
-    versions_stable = data.get("versions", {})
-    latest_version = versions_stable.get("stable", "") if isinstance(versions_stable, dict) else ""
+    if kind == "formula":
+        versions_stable = data.get("versions", {})
+        latest_version = versions_stable.get("stable", "") if isinstance(versions_stable, dict) else ""
+        homepage = data.get("homepage", "") or ""
+        desc = data.get("desc", "") or ""
+        lic = data.get("license", "") or ""
+        deps = data.get("dependencies", [])
+        build_deps = data.get("build_dependencies", [])
+        if isinstance(deps, list) and isinstance(build_deps, list):
+            all_deps = deps + build_deps
+        else:
+            all_deps = deps if isinstance(deps, list) else []
+        deprecated = bool(data.get("deprecated"))
+        deprecated_msg = data.get("deprecation_reason")
 
-    # Versioned formulae list
-    versioned = data.get("versioned_formulae", [])
-    versions_list = [latest_version] + versioned if latest_version else versioned
+        # Analytics: install.30d[name], install.90d[name], install.365d[name]
+        downloads_30d = 0
+        analytics = data.get("analytics", {})
+        if isinstance(analytics, dict):
+            install_block = analytics.get("install", {})
+            if isinstance(install_block, dict):
+                d30 = install_block.get("30d", {})
+                if isinstance(d30, dict):
+                    v = d30.get(name, 0)
+                    if isinstance(v, (int, float)):
+                        downloads_30d = int(v)
 
-    # Analytics for downloads
-    downloads_30d = 0
-    analytics = data.get("analytics", {})
-    install_30d = analytics.get("install_30d", {})
-    if isinstance(install_30d, dict):
-        pkg_installs = install_30d.get(name, 0)
-        if isinstance(pkg_installs, int):
-            downloads_30d = pkg_installs
-
-    deps = data.get("dependencies", [])
+        versioned = data.get("versioned_formulae", [])
+        versions_list = [latest_version] + versioned if latest_version else versioned
+    else:  # cask
+        latest_version = data.get("version", "") or ""
+        homepage = data.get("homepage", "") or ""
+        desc = data.get("desc", "") or data.get("name", [""])[0] if isinstance(data.get("name"), list) else ""
+        lic = ""
+        all_deps = data.get("depends_on", {}).get("formula", []) if isinstance(data.get("depends_on"), dict) else []
+        if not isinstance(all_deps, list):
+            all_deps = []
+        deprecated = bool(data.get("deprecated"))
+        deprecated_msg = data.get("deprecation_reason")
+        downloads_30d = 0
+        analytics = data.get("analytics", {})
+        if isinstance(analytics, dict):
+            install_block = analytics.get("install", {})
+            if isinstance(install_block, dict):
+                d30 = install_block.get("30d", {})
+                if isinstance(d30, dict):
+                    v = d30.get(name, 0)
+                    if isinstance(v, (int, float)):
+                        downloads_30d = int(v)
+        versions_list = [latest_version] if latest_version else []
 
     return {
         "ecosystem": "homebrew",
         "name": name,
         "latest_version": latest_version,
-        "description": data.get("desc", ""),
-        "license": data.get("license", ""),
-        "homepage": data.get("homepage", ""),
+        "description": desc,
+        "license": lic,
+        "homepage": homepage,
         "repository": "",
         "downloads_weekly": downloads_30d // 4 if downloads_30d else 0,
-        "maintainers_count": 0,
-        "deprecated": bool(data.get("deprecated")),
-        "deprecated_message": data.get("deprecation_reason"),
+        "maintainers_count": 1,  # Homebrew core maintained by collective
+        "deprecated": deprecated,
+        "deprecated_message": deprecated_msg,
         "first_published": None,
         "last_published": None,
         "versions": versions_list[:20],
         "all_version_count": len(versions_list),
-        "dependencies": deps if isinstance(deps, list) else [],
+        "dependencies": all_deps[:50] if isinstance(all_deps, list) else [],
     }
 
 
@@ -1094,6 +1349,16 @@ async def fetch_vulnerabilities(ecosystem: str, name: str, latest_version: str =
                 "source": "osv",
                 "published_at": v.get("published"),
             }
+
+            # Noise filter: skip very old CVEs without a fixed_version — these
+            # are typically ancient advisories where the fix predates OSV data
+            # (e.g. CVE-2011-4140 on django 6.x). Without a fixed_version we
+            # can't determine relevance, and keeping them drags health scores
+            # down for packages that are actually safe.
+            if fixed is None:
+                m = re.match(r"CVE-(\d{4})-", vuln_id or "")
+                if m and int(m.group(1)) < 2020:
+                    continue
 
             # Filter: only include vulns that affect the latest version
             if latest_version and not _is_vuln_relevant(vuln_entry, latest_version):

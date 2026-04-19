@@ -150,7 +150,7 @@ const SETUP_TABS = [
     id: "chatgpt",
     label: "ChatGPT",
     file: "GPT Store",
-    snippet: `Search "DepScope" in the GPT Store — or use the OpenAPI spec:
+    snippet: `Direct link: https://chatgpt.com/g/g-69e02d12226c8191a7f24f3a8481bc4e-depscope
 https://depscope.dev/openapi-gpt.json`,
   },
   {

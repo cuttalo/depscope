@@ -177,8 +177,8 @@ originSessionId: 21209a7e-7e4e-46e5-aa87-f1f2b0a39c02
 | GPT Store | "DepScope" — LIVE, chiama API reali |
 | npm | https://www.npmjs.com/package/depscope-mcp |
 | RapidAPI | Pubblicato |
-| GitHub main | https://github.com/vincenzorubino27031980/depscope |
-| GitHub MCP | https://github.com/vincenzorubino27031980/depscope-mcp |
+| GitHub main | https://github.com/cuttalo/depscope |
+| GitHub MCP | https://github.com/cuttalo/depscope |
 | Show HN | Pubblicato |
 | Dev.to | Articolo pubblicato |
 | Reddit | u/Depscope (account nuovo, karma da accumulare) |

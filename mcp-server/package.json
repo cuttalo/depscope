@@ -18,7 +18,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vincenzorubino27031980/depscope.git"
+    "url": "git+https://github.com/cuttalo/depscope.git"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"

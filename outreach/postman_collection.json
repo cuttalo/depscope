@@ -1,0 +1,225 @@
+{
+  "info": {
+    "name": "DepScope API",
+    "description": "Package Intelligence API — Check health, vulnerabilities, and versions for npm, PyPI, and Cargo packages.\n\nBase URL: https://depscope.dev/api\n\nFree, no API key required.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "depscope"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "item": [
+        {
+          "name": "Check npm package",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://depscope.dev/api/check/npm/express",
+              "protocol": "https",
+              "host": ["depscope", "dev"],
+              "path": ["api", "check", "npm", "express"]
+            },
+            "description": "Get full health report for an npm package including score, vulnerabilities, maintenance status"
+          }
+        },
+        {
+          "name": "Check PyPI package",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://depscope.dev/api/check/pypi/requests",
+              "protocol": "https",
+              "host": ["depscope", "dev"],
+              "path": ["api", "check", "pypi", "requests"]
+            }
+          }
+        },
+        {
+          "name": "Check Cargo package",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://depscope.dev/api/check/cargo/serde",
+              "protocol": "https",
+              "host": ["depscope", "dev"],
+              "path": ["api", "check", "cargo", "serde"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Compare",
+      "item": [
+        {
+          "name": "Compare npm packages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://depscope.dev/api/compare/npm/express,fastify,hono",
+              "protocol": "https",
+              "host": ["depscope", "dev"],
+              "path": ["api", "compare", "npm", "express,fastify,hono"]
+            },
+            "description": "Compare health scores of multiple packages side by side"
+          }
+        },
+        {
+          "name": "Compare PyPI packages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://depscope.dev/api/compare/pypi/django,flask,fastapi",
+              "protocol": "https",
+              "host": ["depscope", "dev"],
+              "path": ["api", "compare", "pypi", "django,flask,fastapi"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bulk Check",
+      "item": [
+        {
+          "name": "Bulk check npm packages",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"packages\":[\"express\",\"lodash\",\"axios\",\"react\",\"next\"]}"
+            },
+            "url": {
+              "raw": "https://depscope.dev/api/bulk/npm",
+              "protocol": "https",
+              "host": ["depscope", "dev"],
+              "path": ["api", "bulk", "npm"]
+            },
+            "description": "Check up to 50 packages in a single request"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Ecosystems",
+      "item": [
+        {
+          "name": "Get npm ecosystem stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://depscope.dev/api/ecosystems/npm",
+              "protocol": "https",
+              "host": ["depscope", "dev"],
+              "path": ["api", "ecosystems", "npm"]
+            }
+          }
+        },
+        {
+          "name": "Get PyPI ecosystem stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://depscope.dev/api/ecosystems/pypi",
+              "protocol": "https",
+              "host": ["depscope", "dev"],
+              "path": ["api", "ecosystems", "pypi"]
+            }
+          }
+        },
+        {
+          "name": "Get Cargo ecosystem stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://depscope.dev/api/ecosystems/cargo",
+              "protocol": "https",
+              "host": ["depscope", "dev"],
+              "path": ["api", "ecosystems", "cargo"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Popular Packages",
+      "item": [
+        {
+          "name": "Get popular packages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://depscope.dev/api/popular",
+              "protocol": "https",
+              "host": ["depscope", "dev"],
+              "path": ["api", "popular"]
+            },
+            "description": "Get the most checked packages across all ecosystems"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stats",
+      "item": [
+        {
+          "name": "Get global stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://depscope.dev/api/stats",
+              "protocol": "https",
+              "host": ["depscope", "dev"],
+              "path": ["api", "stats"]
+            },
+            "description": "Global statistics: total packages analyzed, average health scores, etc."
+          }
+        }
+      ]
+    },
+    {
+      "name": "MCP (AI Agents)",
+      "item": [
+        {
+          "name": "MCP Check package",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"method\":\"tools/call\",\"params\":{\"name\":\"check_package\",\"arguments\":{\"ecosystem\":\"npm\",\"package\":\"express\"}}}"
+            },
+            "url": {
+              "raw": "https://depscope.dev/mcp",
+              "protocol": "https",
+              "host": ["depscope", "dev"],
+              "path": ["mcp"]
+            },
+            "description": "MCP endpoint for AI agents (Claude, GPT, etc.) to check package health"
+          }
+        }
+      ]
+    }
+  ]
+}

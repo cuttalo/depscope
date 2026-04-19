@@ -1,7 +1,7 @@
 """DepScope Configuration"""
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://depscope:${DB_PASSWORD}@localhost:5432/depscope")
+DATABASE_URL = os.getenv("DATABASE_URL") or "postgresql://depscope:CHANGEME@localhost:5432/depscope"  # override via env
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # Rate limiting

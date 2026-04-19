@@ -52,7 +52,7 @@ curl -X POST https://depscope.dev/api/scan \\
   {
     id: "chatgpt",
     title: "ChatGPT",
-    blurb: 'Search "DepScope" in the GPT Store, or use the OpenAPI spec.',
+    blurb: 'Direct link: https://chatgpt.com/g/g-69e02d12226c8191a7f24f3a8481bc4e-depscope. Or OpenAPI spec:',
     code: `https://depscope.dev/openapi-gpt.json`,
   },
   {

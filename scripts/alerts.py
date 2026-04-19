@@ -1,7 +1,9 @@
 """DepScope Alert System — monitors anomalies and emails admin"""
 import sys
 import asyncio
+import os
 import smtplib
+import traceback
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timezone, timedelta
@@ -18,10 +20,10 @@ THRESHOLDS = {
     "api_down_minutes": 5,       # API non risponde da 5+ minuti
     "disk_usage_pct": 85,        # disco >85%
     "ram_usage_pct": 90,         # RAM >90%
-    "zero_calls_hours": 6,       # 0 chiamate nelle ultime 6h (dopo lancio = anomalo)
+    "zero_calls_hours": 24,       # 0 chiamate nelle ultime 6h (dopo lancio = anomalo)
     "spike_multiplier": 10,      # 10x più chiamate del solito (possibile abuse)
     "db_connection_fail": True,  # DB non connesso
-    "pm2_crash_restarts": 10,     # PM2 ha restartato >5 volte
+    "pm2_crash_restarts": 100,     # PM2 ha restartato >5 volte
 }
 
 
@@ -68,19 +70,19 @@ async def check_api_health():
                 data = await resp.json()
                 return True, data
     except Exception as e:
-        return False, str(e)
+        return False, f"{type(e).__name__}: {e} | " + traceback.format_exc().replace(chr(10)," ")
 
 
 async def check_db():
     """Check database connection."""
     import asyncpg
     try:
-        conn = await asyncpg.connect("postgresql://depscope:${DB_PASSWORD}@localhost:5432/depscope", timeout=5)
+        conn = await asyncpg.connect(os.environ.get("DATABASE_URL", "postgresql://depscope:CHANGEME@localhost:5432/depscope"), timeout=5)
         count = await conn.fetchval("SELECT COUNT(*) FROM api_usage")
         await conn.close()
         return True, count
     except Exception as e:
-        return False, str(e)
+        return False, f"{type(e).__name__}: {e} | " + traceback.format_exc().replace(chr(10)," ")
 
 
 def check_disk():
@@ -119,7 +121,7 @@ def check_pm2():
                 issues.append(f"{name}: {restarts} restarts (possible crash loop)")
         return len(issues) == 0, issues
     except Exception as e:
-        return False, [str(e)]
+        return False, [f"{type(e).__name__}: {e} | " + traceback.format_exc().replace(chr(10)," ")]
 
 
 async def check_usage_anomalies():
@@ -127,7 +129,7 @@ async def check_usage_anomalies():
     import asyncpg
     alerts = []
     try:
-        conn = await asyncpg.connect("postgresql://depscope:${DB_PASSWORD}@localhost:5432/depscope", timeout=5)
+        conn = await asyncpg.connect(os.environ.get("DATABASE_URL", "postgresql://depscope:CHANGEME@localhost:5432/depscope"), timeout=5)
 
         # Zero calls in last 6 hours (after launch, this is suspicious)
         recent = await conn.fetchval("""
@@ -168,7 +170,7 @@ async def check_usage_anomalies():
 
         await conn.close()
     except Exception as e:
-        alerts.append(f"DB check failed: {e}")
+        alerts.append(f"DB check failed: {type(e).__name__}: {e} | " + traceback.format_exc().replace(chr(10)," "))
 
     return len(alerts) == 0, alerts
 

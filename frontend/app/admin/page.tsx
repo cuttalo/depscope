@@ -162,7 +162,7 @@ export default function AdminPage() {
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold gradient-text">DepScope Admin</h1>
-          <a href="/agent" className="text-sm px-4 py-2 rounded-lg border border-[var(--accent)]/30 text-[var(--accent)] hover:bg-[var(--accent)]/10 transition">Marketing Agent</a><a href="/mission-control" className="text-sm px-4 py-2 rounded-lg border border-[var(--accent)]/30 text-[var(--accent)] hover:bg-[var(--accent)]/10 transition">Mission Control</a>
+          <a href="/admin/plan" className="text-sm px-4 py-2 rounded-lg border border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20 transition font-medium">Business Plan</a><a href="/agent" className="text-sm px-4 py-2 rounded-lg border border-[var(--accent)]/30 text-[var(--accent)] hover:bg-[var(--accent)]/10 transition">Marketing Agent</a><a href="/mission-control" className="text-sm px-4 py-2 rounded-lg border border-[var(--accent)]/30 text-[var(--accent)] hover:bg-[var(--accent)]/10 transition">Mission Control</a>
           <div className="flex gap-3">
             <button onClick={refresh} className="text-sm px-4 py-2 rounded-lg border border-[var(--border)] hover:bg-[var(--bg-card)] transition">
               Refresh

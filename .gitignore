@@ -58,3 +58,9 @@ __pycache__/
 *.bak
 *.bak.*
 *.bak_*
+
+# Database backups
+backups/
+*.sql
+*.sql.gz
+*.dump

@@ -219,10 +219,17 @@ async def _fetch_full_package(ecosystem: str, package: str) -> dict | None:
             "note": "Insufficient data to compute reliable score",
         }
 
-    # --- Fix 4: enrich recommendation with inline alternatives + bugs details,
-    # so agents don't need a second round-trip.
+    # --- Fix 4 (expanded): enrich recommendation with inline alternatives so
+    # agents don't need a second round-trip. Trigger on find_alternative,
+    # do_not_use, deprecated packages, or high-risk health score — all cases
+    # where an agent is likely about to ask "what should I use instead?".
     try:
-        if recommendation.get("action") == "find_alternative":
+        _needs_alts = (
+            recommendation.get("action") in ("find_alternative", "do_not_use")
+            or bool(pkg_data.get("deprecated"))
+            or (health.get("risk") == "high")
+        )
+        if _needs_alts:
             from api.verticals import get_alternatives as _get_alts_db
             alts = await _get_alts_db(ecosystem, package)
             if alts:
@@ -1033,6 +1040,77 @@ async def get_breaking(
     return payload
 
 
+@app.get("/api/bugs/popular", tags=["bugs"])
+async def list_bugs_popular(limit: int = 100):
+    """Top packages with recorded bugs, used for sitemap generation and indexing."""
+    limit = max(1, min(int(limit or 100), 1000))
+    cache_key = f"bugs:popular:{limit}"
+    cached = await cache_get(cache_key)
+    if cached:
+        cached["_cache"] = "hit"
+        return cached
+
+    from api.database import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT p.ecosystem, p.name, COUNT(*) AS bug_count
+            FROM bugs b
+            JOIN packages p ON p.id = b.package_id
+            GROUP BY p.ecosystem, p.name
+            ORDER BY bug_count DESC, p.name ASC
+            LIMIT $1
+            """,
+            limit,
+        )
+    items = [
+        {"ecosystem": r["ecosystem"], "name": r["name"], "bug_count": r["bug_count"]}
+        for r in rows
+    ]
+    payload = {"total": len(items), "packages": items, "_cache": "miss"}
+    await cache_set(cache_key, payload, ttl=3600)
+    return payload
+
+
+@app.get("/api/error/popular", tags=["errors"])
+async def list_errors_popular(limit: int = 500):
+    """Top error patterns by votes, used for sitemap generation and indexing."""
+    limit = max(1, min(int(limit or 500), 2000))
+    cache_key = f"errors:popular:{limit}"
+    cached = await cache_get(cache_key)
+    if cached:
+        cached["_cache"] = "hit"
+        return cached
+
+    from api.database import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT hash, pattern, ecosystem, package_name, votes, updated_at
+            FROM errors
+            ORDER BY votes DESC NULLS LAST, id DESC
+            LIMIT $1
+            """,
+            limit,
+        )
+    items = [
+        {
+            "hash": r["hash"],
+            "pattern": r["pattern"],
+            "ecosystem": r["ecosystem"],
+            "package_name": r["package_name"],
+            "votes": r["votes"],
+            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+        }
+        for r in rows
+    ]
+    payload = {"total": len(items), "errors": items, "_cache": "miss"}
+    await cache_set(cache_key, payload, ttl=3600)
+    return payload
+
+
 @app.get("/api/compare/{ecosystem}/{packages_csv}", tags=["packages"])
 async def compare_packages(ecosystem: str, packages_csv: str, request: Request = None):
     """
@@ -1771,6 +1849,369 @@ async def sitemap_packages(
     ]
 
 
+# --------------------------------------------------------------------------- #
+# SEO QUALITY GATES — prevent thin-content penalty on /breaking /bugs /error
+# --------------------------------------------------------------------------- #
+
+# Thresholds (kept as module-level so /api/admin/seo-health reports them)
+SEO_MIN_BREAKING = 3          # min breaking changes per package to be indexable
+SEO_MIN_BUGS = 3              # min known bugs per package to be indexable
+SEO_MIN_SOLUTION_LEN = 200    # min chars for error.solution
+SEO_MIN_CONFIDENCE = 0.7      # min error.confidence
+SEO_MIN_DOWNLOADS = 1000      # min weekly downloads for pkg sitemap entry
+SEO_MIN_HEALTH_SIGNALS = 3    # min positive signals (mirrors insufficient_data logic)
+
+
+@app.get("/api/sitemap-quality-pages", include_in_schema=False)
+async def sitemap_quality_pages():
+    """Returns ONLY URLs that pass SEO quality gates.
+
+    Used by /sitemap.xml to avoid submitting thin-content pages to Google.
+    - packages: health_score set (not insufficient_data) AND downloads_weekly > 1000
+    - breaking: packages with >= 3 curated breaking changes
+    - bugs: packages with >= 3 known bugs
+    - errors: entries with solution length >= 200 AND confidence >= 0.7
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        pkg_rows = await conn.fetch(
+            """
+            SELECT ecosystem, name, updated_at, downloads_weekly
+            FROM packages
+            WHERE health_score IS NOT NULL
+              AND health_score > 0
+              AND downloads_weekly > $1
+            ORDER BY downloads_weekly DESC NULLS LAST
+            LIMIT 10000
+            """,
+            SEO_MIN_DOWNLOADS,
+        )
+        breaking_rows = await conn.fetch(
+            """
+            SELECT p.ecosystem, p.name AS package_name, COUNT(*) AS n
+            FROM breaking_changes b
+            JOIN packages p ON p.id = b.package_id
+            GROUP BY p.ecosystem, p.name
+            HAVING COUNT(*) >= $1
+            ORDER BY COUNT(*) DESC
+            """,
+            SEO_MIN_BREAKING,
+        )
+        bug_rows = await conn.fetch(
+            """
+            SELECT ecosystem, package_name, COUNT(*) AS n
+            FROM known_bugs
+            GROUP BY ecosystem, package_name
+            HAVING COUNT(*) >= $1
+            ORDER BY COUNT(*) DESC
+            """,
+            SEO_MIN_BUGS,
+        )
+        error_rows = await conn.fetch(
+            """
+            SELECT hash, votes, confidence, updated_at
+            FROM errors
+            WHERE LENGTH(solution) >= $1
+              AND confidence >= $2
+            ORDER BY votes DESC NULLS LAST, id DESC
+            LIMIT 2000
+            """,
+            SEO_MIN_SOLUTION_LEN,
+            SEO_MIN_CONFIDENCE,
+        )
+
+    return {
+        "packages": [
+            {
+                "ecosystem": r["ecosystem"],
+                "name": r["name"],
+                "downloads_weekly": r["downloads_weekly"] or 0,
+                "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+            }
+            for r in pkg_rows
+        ],
+        "breaking": [
+            {
+                "ecosystem": r["ecosystem"],
+                "name": r["package_name"],
+                "count": r["n"],
+            }
+            for r in breaking_rows
+        ],
+        "bugs": [
+            {
+                "ecosystem": r["ecosystem"],
+                "name": r["package_name"],
+                "count": r["n"],
+            }
+            for r in bug_rows
+        ],
+        "errors": [
+            {
+                "hash": r["hash"],
+                "votes": r["votes"] or 0,
+                "confidence": float(r["confidence"] or 0),
+                "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+            }
+            for r in error_rows
+        ],
+        "thresholds": {
+            "min_breaking": SEO_MIN_BREAKING,
+            "min_bugs": SEO_MIN_BUGS,
+            "min_solution_length": SEO_MIN_SOLUTION_LEN,
+            "min_confidence": SEO_MIN_CONFIDENCE,
+            "min_downloads": SEO_MIN_DOWNLOADS,
+        },
+    }
+
+
+@app.get("/api/admin/seo-health", include_in_schema=False)
+async def admin_seo_health():
+    """Monitoring endpoint for SEO thin-content protection.
+
+    Returns:
+      - indexable vs total per route
+      - ratio: indexable / total (warn if < 0.3 on any route)
+      - per-route totals for sitemap crawl-budget planning
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        breaking_totals = await conn.fetchrow(
+            """
+            WITH per_pkg AS (
+                SELECT package_id, COUNT(*) AS n
+                FROM breaking_changes
+                GROUP BY package_id
+            )
+            SELECT
+              COUNT(*) FILTER (WHERE n >= $1) AS indexable,
+              COUNT(*) AS total
+            FROM per_pkg
+            """,
+            SEO_MIN_BREAKING,
+        )
+        bug_totals = await conn.fetchrow(
+            """
+            WITH per_pkg AS (
+                SELECT ecosystem, package_name, COUNT(*) AS n
+                FROM known_bugs
+                GROUP BY ecosystem, package_name
+            )
+            SELECT
+              COUNT(*) FILTER (WHERE n >= $1) AS indexable,
+              COUNT(*) AS total
+            FROM per_pkg
+            """,
+            SEO_MIN_BUGS,
+        )
+        error_totals = await conn.fetchrow(
+            """
+            SELECT
+              COUNT(*) FILTER (WHERE LENGTH(solution) >= $1 AND confidence >= $2) AS indexable,
+              COUNT(*) AS total
+            FROM errors
+            """,
+            SEO_MIN_SOLUTION_LEN,
+            SEO_MIN_CONFIDENCE,
+        )
+        pkg_totals = await conn.fetchrow(
+            """
+            SELECT
+              COUNT(*) FILTER (WHERE health_score IS NOT NULL AND health_score > 0 AND downloads_weekly > $1) AS indexable,
+              COUNT(*) AS total
+            FROM packages
+            """,
+            SEO_MIN_DOWNLOADS,
+        )
+
+    def ratio(row):
+        t = int(row["total"] or 0)
+        i = int(row["indexable"] or 0)
+        return {
+            "indexable": i,
+            "total": t,
+            "ratio": round(i / t, 3) if t else 0.0,
+            "warn": (t > 0 and (i / t) < 0.3),
+        }
+
+    pkg_r = ratio(pkg_totals)
+    breaking_r = ratio(breaking_totals)
+    bug_r = ratio(bug_totals)
+    error_r = ratio(error_totals)
+
+    total_indexable = (
+        pkg_r["indexable"] + breaking_r["indexable"] + bug_r["indexable"] + error_r["indexable"]
+    )
+    total_pages = pkg_r["total"] + breaking_r["total"] + bug_r["total"] + error_r["total"]
+    overall_ratio = round(total_indexable / total_pages, 3) if total_pages else 0.0
+
+    return {
+        "thresholds": {
+            "min_breaking": SEO_MIN_BREAKING,
+            "min_bugs": SEO_MIN_BUGS,
+            "min_solution_length": SEO_MIN_SOLUTION_LEN,
+            "min_confidence": SEO_MIN_CONFIDENCE,
+            "min_downloads": SEO_MIN_DOWNLOADS,
+        },
+        "routes": {
+            "pkg": pkg_r,
+            "breaking": breaking_r,
+            "bugs": bug_r,
+            "error": error_r,
+        },
+        "overall": {
+            "indexable": total_indexable,
+            "total": total_pages,
+            "ratio": overall_ratio,
+            "warn": overall_ratio < 0.3,
+        },
+    }
+
+
+@app.get("/api/admin/automation", include_in_schema=False)
+async def admin_automation(request: Request):
+    """Automation dashboard feed.
+
+    Returns installed cron jobs + last-run info (parsed from log mtimes +
+    last non-empty line), disk usage, DB size, PM2 process status.
+
+    Admin-only. No secrets leaked (log paths are hardcoded/non-sensitive).
+    """
+    import os
+    import re
+    import subprocess
+    import shutil
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    user = await _get_user_from_request(request)
+    if not user or user["role"] != "admin":
+        raise HTTPException(403, "Admin only")
+
+    LOG_DIR = Path("/var/log/depscope")
+
+    # Cron jobs we manage. (schedule, name, log_file). Log_file may not yet
+    # exist for brand-new jobs; we handle missing files gracefully.
+    jobs = [
+        ("0 2 1 * *",   "mass_populate",            LOG_DIR / "mass_populate.log"),
+        ("0 3 1 * *",   "recalc_health_all",        LOG_DIR / "recalc_health.log"),
+        ("0 4 * * 0",   "backup_db",                LOG_DIR / "backup.log"),
+        ("0 5 * * *",   "indexnow_submit",          LOG_DIR / "indexnow.log"),
+        ("0 * * * *",   "disk_monitor",             LOG_DIR / "disk.log"),
+        ("0 3 * * 0",   "ingest.run_all",           LOG_DIR / "ingest.log"),
+        ("0 4 * * *",   "compute_intelligence",     LOG_DIR / "intelligence.log"),
+        ("0 3 * * *",   "record_health_snapshot",   LOG_DIR / "health_snapshot.log"),
+        ("0 10 * * 1",  "generate_weekly_report",   Path("/home/deploy/depscope/data/weekly_report.log")),
+        ("0 */6 * * *", "alerts",                   Path("/tmp/depscope-alerts.log")),
+        ("0 */6 * * *", "preprocess",               Path("/tmp/depscope-preprocess.log")),
+        ("0 */12 * * *", "fetch_github_stats",      Path("/tmp/depscope-github-stats.log")),
+        ("0 6,18 * * *", "fetch_downloads",         Path("/tmp/depscope-downloads.log")),
+        ("0 2 * * *",   "expand_db",                Path("/tmp/depscope-expand.log")),
+        ("0 6 * * *",   "daily_report",             Path("/tmp/depscope-report.log")),
+        ("0 */4 * * *", "marketing_agent",          Path("/tmp/marketing_agent.log")),
+    ]
+
+    def tail_last(path: Path, max_len: int = 200) -> str:
+        if not path.exists():
+            return ""
+        try:
+            with open(path, "rb") as f:
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                chunk = 4096
+                f.seek(max(0, size - chunk))
+                data = f.read().decode("utf-8", errors="replace")
+            for line in reversed(data.splitlines()):
+                line = line.strip()
+                if line:
+                    return line[:max_len]
+        except Exception:
+            pass
+        return ""
+
+    def job_status(last_line: str) -> str:
+        if not last_line:
+            return "unknown"
+        lc = last_line.lower()
+        if re.search(r"\b(error|failed|exception|traceback|critical)\b", lc):
+            return "error"
+        if re.search(r"\b(warn|warning|degraded)\b", lc):
+            return "warning"
+        return "ok"
+
+    job_entries = []
+    for schedule, name, log_path in jobs:
+        last_mtime = None
+        if log_path.exists():
+            last_mtime = datetime.fromtimestamp(
+                log_path.stat().st_mtime, tz=timezone.utc
+            ).isoformat()
+        last_line = tail_last(log_path)
+        job_entries.append({
+            "schedule": schedule,
+            "name": name,
+            "log": str(log_path),
+            "last_run": last_mtime,
+            "last_line": last_line,
+            "status": job_status(last_line),
+        })
+
+    # Disk
+    du = shutil.disk_usage("/")
+    disk = {
+        "total": du.total,
+        "used": du.used,
+        "free": du.free,
+        "pct": round(du.used * 100 / du.total, 1),
+    }
+
+    # DB size
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        db_size = await conn.fetchval(
+            "SELECT pg_size_pretty(pg_database_size(current_database()))"
+        )
+        pkg_count = await conn.fetchval("SELECT COUNT(*) FROM packages")
+        vuln_count = await conn.fetchval("SELECT COUNT(*) FROM vulnerabilities")
+
+    # PM2
+    pm2_procs = []
+    try:
+        out = subprocess.run(
+            ["pm2", "jlist"], capture_output=True, text=True, timeout=5
+        )
+        if out.returncode == 0:
+            import json as _json
+            for p in _json.loads(out.stdout or "[]"):
+                env = p.get("pm2_env", {})
+                monit = p.get("monit", {})
+                pm2_procs.append({
+                    "name": p.get("name"),
+                    "status": env.get("status"),
+                    "restarts": env.get("restart_time"),
+                    "uptime_ms": (
+                        int(datetime.now(timezone.utc).timestamp() * 1000)
+                        - int(env.get("pm_uptime") or 0)
+                    ),
+                    "cpu": monit.get("cpu"),
+                    "memory_mb": round((monit.get("memory") or 0) / 1024 / 1024, 1),
+                })
+    except Exception as e:
+        pm2_procs = [{"error": str(e)}]
+
+    return {
+        "jobs": job_entries,
+        "disk": disk,
+        "db": {
+            "size": db_size,
+            "packages": pkg_count,
+            "vulnerabilities": vuln_count,
+        },
+        "pm2": pm2_procs,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 async def openapi_for_gpt():
     """Cleaned OpenAPI spec for ChatGPT Actions — only public API endpoints."""
     return {
@@ -1855,6 +2296,110 @@ async def admin_stats_full(request: Request):
     }
 
 
+@app.get("/api/admin/plan-metrics", include_in_schema=False)
+async def admin_plan_metrics(request: Request):
+    """Live counters feeding the /admin/plan business-plan page.
+
+    Shows the TRUE state of the product — no threshold hiding, no marketing
+    rounding. Admin only.
+    """
+    user = await _get_user_from_request(request)
+    if not user or user["role"] != "admin":
+        raise HTTPException(403, "Admin only")
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        verticals = {
+            "packages":         await conn.fetchval("SELECT COUNT(*) FROM packages"),
+            "vulnerabilities":  await conn.fetchval("SELECT COUNT(*) FROM vulnerabilities"),
+            "alternatives":     await conn.fetchval("SELECT COUNT(*) FROM alternatives"),
+            "breaking_changes": await conn.fetchval("SELECT COUNT(*) FROM breaking_changes"),
+            "errors":           await conn.fetchval("SELECT COUNT(*) FROM errors"),
+            "known_bugs":       await conn.fetchval("SELECT COUNT(*) FROM known_bugs"),
+            "compat_matrix":    await conn.fetchval("SELECT COUNT(*) FROM compat_matrix"),
+        }
+        ecosystem_rows = await conn.fetch(
+            """
+            SELECT p.ecosystem,
+                   COUNT(DISTINCT p.id) AS packages,
+                   COUNT(DISTINCT v.id) AS vulnerabilities,
+                   COUNT(DISTINCT a.id) AS alternatives,
+                   COUNT(DISTINCT b.id) AS breaking_changes,
+                   COUNT(DISTINCT k.id) AS known_bugs
+            FROM packages p
+            LEFT JOIN vulnerabilities v ON v.package_id = p.id
+            LEFT JOIN alternatives a    ON a.package_id = p.id
+            LEFT JOIN breaking_changes b ON b.package_id = p.id
+            LEFT JOIN known_bugs k       ON k.package_id = p.id
+            GROUP BY p.ecosystem
+            ORDER BY packages DESC
+            """
+        )
+        usage_total = await conn.fetchval(
+            "SELECT COUNT(*) FROM api_usage WHERE user_agent NOT ILIKE '%bot%' AND user_agent NOT ILIKE '%crawl%' AND user_agent != ''"
+        ) or 0
+        usage_30d = await conn.fetchval(
+            "SELECT COUNT(*) FROM api_usage WHERE created_at > NOW() - INTERVAL '30 days' AND user_agent NOT ILIKE '%bot%' AND user_agent NOT ILIKE '%crawl%' AND user_agent != ''"
+        ) or 0
+        usage_7d = await conn.fetchval(
+            "SELECT COUNT(*) FROM api_usage WHERE created_at > NOW() - INTERVAL '7 days' AND user_agent NOT ILIKE '%bot%' AND user_agent NOT ILIKE '%crawl%' AND user_agent != ''"
+        ) or 0
+        unique_ips_30d = await conn.fetchval(
+            "SELECT COUNT(DISTINCT ip_address) FROM api_usage WHERE created_at > NOW() - INTERVAL '30 days' AND ip_address IS NOT NULL"
+        ) or 0
+        users_count = await conn.fetchval("SELECT COUNT(*) FROM users") or 0
+        users_by_plan = await conn.fetch(
+            "SELECT plan, COUNT(*) AS n FROM users GROUP BY plan"
+        )
+        api_keys_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM api_keys WHERE revoked_at IS NULL"
+        ) or 0
+        subs_rows = await conn.fetch(
+            "SELECT status, COUNT(*) AS n FROM subscriptions GROUP BY status"
+        ) if await conn.fetchval("SELECT to_regclass('public.subscriptions')") else []
+
+    return {
+        "verticals": verticals,
+        "ecosystems": [
+            {
+                "ecosystem": r["ecosystem"],
+                "packages": r["packages"],
+                "vulnerabilities": r["vulnerabilities"],
+                "alternatives": r["alternatives"],
+                "breaking_changes": r["breaking_changes"],
+                "known_bugs": r["known_bugs"],
+            }
+            for r in ecosystem_rows
+        ],
+        "usage": {
+            "api_calls_total": usage_total,
+            "api_calls_30d": usage_30d,
+            "api_calls_7d": usage_7d,
+            "unique_ips_30d": unique_ips_30d,
+        },
+        "users": {
+            "total": users_count,
+            "active_api_keys": api_keys_count,
+            "by_plan": {r["plan"]: r["n"] for r in users_by_plan},
+        },
+        "revenue": {
+            "subscriptions_by_status": {r["status"]: r["n"] for r in subs_rows},
+            "mrr_eur": 0,  # stripe not active yet
+            "paying_customers": 0,
+        },
+        "distribution": {
+            "mcp_npm_version_latest": "0.2.0",
+            "gpt_store_live": True,
+            "rapidapi_live": True,
+            "total_ecosystems_declared": 17,
+            "ecosystems_with_breaking_or_bugs": sum(
+                1 for r in ecosystem_rows
+                if (r["breaking_changes"] or 0) + (r["known_bugs"] or 0) > 0
+            ),
+        },
+    }
+
+
 # ============================================================
 # ENDPOINTS FOR AI AGENTS — what agents actually need
 # ============================================================
@@ -1932,6 +2477,60 @@ async def get_current_time():
         "time": now.strftime("%H:%M:%S"),
         "day": now.strftime("%A"),
         "timezone": "UTC",
+    }
+
+
+@app.get("/api/health", tags=["public"])
+async def healthcheck():
+    """
+    Liveness + readiness probe. External uptime monitors hit this every 5m.
+
+    Returns 200 with subsystem statuses when everything is up. If Postgres or
+    Redis fail, individual fields flip to the error string but we still return
+    200 (monitor will alert on the overall "status" field) — bumping to 500
+    would cause PM2 to restart us, which masks the real problem.
+    """
+    from datetime import datetime, timezone
+    import subprocess
+
+    db_status = "ok"
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.fetchval("SELECT 1")
+    except Exception as e:
+        db_status = f"error: {type(e).__name__}"
+
+    redis_status = "ok"
+    try:
+        from api.cache import get_redis
+        r = await get_redis()
+        await r.ping()
+    except Exception as e:
+        redis_status = f"error: {type(e).__name__}"
+
+    pm2_count = 0
+    try:
+        out = subprocess.run(
+            ["pm2", "jlist"], capture_output=True, text=True, timeout=5
+        )
+        if out.returncode == 0:
+            import json as _json
+            procs = _json.loads(out.stdout or "[]")
+            pm2_count = sum(
+                1 for p in procs
+                if p.get("pm2_env", {}).get("status") == "online"
+            )
+    except Exception:
+        pm2_count = -1
+
+    overall = "ok" if db_status == "ok" and redis_status == "ok" else "degraded"
+    return {
+        "status": overall,
+        "db": db_status,
+        "redis": redis_status,
+        "pm2_processes": pm2_count,
+        "utc": datetime.now(timezone.utc).isoformat(),
     }
 
 

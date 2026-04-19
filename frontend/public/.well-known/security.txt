@@ -1,0 +1,6 @@
+Contact: mailto:security@depscope.dev
+Expires: 2027-04-19T00:00:00.000Z
+Preferred-Languages: en, it
+Canonical: https://depscope.dev/.well-known/security.txt
+Policy: https://depscope.dev/security/disclosure
+Acknowledgments: https://depscope.dev/security#hall-of-fame

@@ -1,0 +1,5 @@
+=== Echo.js Submission ===
+URL: https://echojs.com/submit
+Title: "DepScope: Free API to check package health — we analyzed 14,700+ packages"
+Link: https://depscope.dev
+Note: Requires Echo.js account login at https://echojs.com/login

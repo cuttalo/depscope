@@ -1,0 +1,16 @@
+=== BetaList ===
+URL: https://betalist.com/submit
+Name: DepScope
+Tagline: Free Package Intelligence API for AI Agents
+URL: https://depscope.dev
+Description: Check health, vulnerabilities, and versions for npm, PyPI, and Cargo packages. No auth required. Built for AI coding agents via MCP protocol.
+Maker email: info@ideatagliolaser.it
+Status: Requires manual submission with account
+
+=== DevHunt ===
+URL: https://devhunt.org/
+Name: DepScope
+Tagline: Package Intelligence for AI Agents
+URL: https://depscope.dev
+Description: Free API to check package health before installing. Supports npm, PyPI, Cargo. MCP-compatible for AI agents.
+Status: Requires GitHub login and manual submission

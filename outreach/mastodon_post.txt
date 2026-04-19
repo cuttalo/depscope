@@ -1,0 +1,11 @@
+We analyzed 14,700+ packages across 17 ecosystems (npm, PyPI, Cargo, Go, Maven, NuGet, RubyGems and 10 more).
+
+The results: average health score is just 72/100. 23% of npm packages are unmaintained.
+
+So we built DepScope — a free API to check package health before installing. No auth, 200 req/min. Works with AI coding agents via MCP.
+
+Try it: curl https://depscope.dev/api/check/npm/express
+
+#SupplyChainSecurity #OpenSource #DevTools #npm #PyPI #Cargo #MCP #AIAgents
+
+https://depscope.dev

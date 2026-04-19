@@ -1,0 +1,35 @@
+2026-04-16T05:03:42.093598 | editorial@devclass.com | Data: 35% of popular packages score below 60/100 in new health analysis
+2026-04-16T05:07:03.102063 | press@socket.dev | Package health data: 3,818 packages analyzed across npm/PyPI/Cargo — findings overlap with your work
+2026-04-16T05:09:42.966284 | tips@bleepingcomputer.com | mlflow has 18 unpatched vulnerabilities — package health data from 3,818 packages
+2026-04-16T05:13:03.908093 | press@snyk.io | New data: AI/ML packages have worst security profile — 3,818 package health analysis
+2026-04-16T05:15:47.620702 | info@thehackernews.com | Supply chain data: deprecated npm packages still get 80M+ downloads/week
+2026-04-16T05:19:04.986515 | pr@jfrog.com | Package supply chain data: 80M weekly downloads to deprecated npm packages
+2026-04-16T05:20:38.343701 | mcp@anthropic.com | MCP server for package health — built for Claude Code agents
+2026-04-16T05:21:48.675680 | editors@infoq.com | Ecosystem comparison: Cargo leads npm and PyPI in package health — data from 3,818 packages
+2026-04-16T05:25:05.807304 | editor@cooperpress.com | For JavaScript/Node Weekly: npm packages health analysis — ms gets 412M/week with no updates
+2026-04-16T05:26:42.838027 | partnerships@anthropic.com | Free package intelligence API for Claude coding agents — DepScope
+2026-04-16T05:27:49.197307 | tips@techcrunch.com | AI coding agents are suggesting deprecated packages — data shows the problem at scale
+2026-04-16T05:31:06.696813 | hello@console.dev | Dev tool submission: DepScope — free package health API for AI agents
+2026-04-16T05:32:47.327218 | partnerships@openai.com | Package health API for Codex/ChatGPT coding — free, no auth, already in GPT Store
+2026-04-16T05:37:11.082210 | editors@changelog.com | Package health data: 35% of popular packages need attention — report + open API
+2026-04-16T05:38:48.249929 | hi@cursor.com | Free MCP server for package health checks — built for Cursor agents
+2026-04-16T05:43:11.997711 | DarkReadingNews@darkreading.com | Data: deprecated npm packages with 80M+ weekly downloads persist in supply chains
+2026-04-16T05:44:49.045681 | support@codeium.com | Package health MCP server for Windsurf — free, 10 endpoints
+2026-04-16T05:49:13.613227 | press@securityweek.com | Research: AI/ML packages show worst vulnerability profile in 3,818-package analysis
+2026-04-16T05:50:49.888859 | hi@sourcegraph.com | Package health API for Cody — free dependency intelligence
+2026-04-16T05:55:18.101075 | admin@thehackernews.com | Exclusive data: deprecated packages still get 80M downloads/week — 3,818 package analysis
+2026-04-16T05:56:50.564677 | hi@continue.dev | Free package health tool for Continue — MCP server + API
+2026-04-16T06:01:18.756479 | stories@hackernoon.com | Article submission: The State of Package Health 2026 — 3,818 packages analyzed
+2026-04-16T06:02:55.107545 | partnerships@replit.com | Free package health API for Replit Agent — verify before install
+2026-04-16T17:49:44.685679 | tyler@ui.dev | Article: Free API that checks package health for AI agents (npm focus)
+2026-04-16T17:54:13.101899 | liran@lirantal.com | Your awesome-nodejs-security list inspired this — 3,818 packages analyzed
+2026-04-16T17:55:45.689132 | contact@talkpython.fm | Article: PyPI packages have worst health scores — data from 3,818 packages
+2026-04-16T18:00:13.898640 | feross@socket.dev | DepScope health data complements Socket's supply chain work — 3,818 packages
+2026-04-16T18:01:50.380627 | yo@dev.to | New article on Dev.to: package health data for 3,818 npm/PyPI/Cargo packages
+2026-04-16T18:06:14.866352 | seth@python.org | PyPI security data: avg health 61.5/100 — lowest of 3 ecosystems
+2026-04-16T18:07:50.829691 | hello@hashnode.com | Cross-posting: Package health analysis article (3,818 packages analyzed)
+2026-04-16T18:12:15.670020 | ietf@filippo.io | Cargo leads in package health (74.5/100) — data from 3,818 packages
+2026-04-16T18:13:51.585604 | content@dzone.com | Article submission: Package health data — 35% of popular packages need attention
+2026-04-16T18:18:16.649516 | william@trailofbits.com | pip-audit data in context: PyPI health scores across 3,818 packages
+2026-04-16T18:24:17.341664 | myles.borins@gmail.com | npm ecosystem data: 412M weekly downloads to stale packages
+2026-04-16T18:30:18.281507 | di@python.org | PyPI health data: AI/ML packages have worst security profile

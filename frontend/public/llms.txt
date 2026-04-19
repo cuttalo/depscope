@@ -181,7 +181,7 @@ Tools:
 - ChatGPT Actions: https://depscope.dev/openapi-gpt.json
 - OpenAPI spec: https://depscope.dev/openapi.json
 - AI Plugin: https://depscope.dev/.well-known/ai-plugin.json
-- MCP Server: https://github.com/vincenzorubino27031980/depscope-mcp
+- MCP Server: https://github.com/cuttalo/depscope
 - NPM: npm install -g depscope-mcp
 
 ## Contact

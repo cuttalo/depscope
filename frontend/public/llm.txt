@@ -1,58 +1,115 @@
 # DepScope — Package Intelligence API for AI Agents
 
-## What
-Free API to check package health, vulnerabilities, dependencies, and licenses across 17 ecosystems before suggesting installs.
+## What is this
+Free API for AI coding agents (Claude Code, Cursor, Copilot, Aider, Continue, Windsurf) to check package health, vulnerabilities, errors, compatibility, bugs, breaking changes, and alternatives before suggesting any install.
 
 ## Why
-AI coding agents repeatedly query npm/PyPI/OSV for the same data. Shared cache = fewer tokens, less energy, faster responses.
+AI agents independently query npm/PyPI/OSV millions of times for the same data. DepScope caches once, serves every agent. Save tokens, save energy, ship safer code.
 
-## How to use
-curl https://depscope.dev/api/check/{ecosystem}/{package}
+## Quick integration (1 line)
 
-Ecosystems: npm, pypi, cargo, go, composer, maven, nuget, rubygems, pub, hex, swift, cocoapods, cpan, hackage, cran, conda, homebrew
-
-## Endpoints
-- /api/check/{eco}/{pkg} — full health + vulns + recommendation
-- /api/prompt/{eco}/{pkg} — LLM-optimized plain text (use this!)
-- /api/tree/{eco}/{pkg} — transitive dependencies with health
-- /api/licenses/{eco}/{pkg} — license aggregation
-- /api/history/{eco}/{pkg} — 90-day health trend
-- /api/compare/{eco}/{pkg1},{pkg2} — side by side
-- /api/alternatives/{eco}/{pkg} — find replacements
-- /api/exists/{eco}/{pkg} — boolean check
-- /api/search/{eco}?q= — keyword search
-- /api/latest/{eco}/{pkg} — just the version
-- /api/now — current UTC time
-
-## Auth
-None. Free tier: 200 req/min. No signup.
-
-## MCP
-npm install -g depscope-mcp
-Or add to Claude Desktop / Cursor config. URL: https://depscope.dev/mcp
-
-## Integration in 1 line
 Add to your agent's rules file:
-"Before any install: curl depscope.dev/api/check/{eco}/{pkg}"
+Before any install: curl depscope.dev/api/check/{eco}/{pkg} — no auth, free
 
-## Data sources
-npm, PyPI, crates.io, proxy.golang.org, Packagist, Maven Central, NuGet, RubyGems, pub.dev, hex.pm, OSV.dev (vulnerabilities)
+## 17 ecosystems
+npm, pypi, cargo, go, composer, maven, nuget, rubygems, pub, hex, swift, cocoapods, cpan, hackage, cran, conda, homebrew
 
-## When to use
-- Before recommending a package install
-- When building dependency lists
-- When auditing project health
-- When choosing between alternatives
+## Five verticals (one infrastructure)
 
-## When NOT to use
-- For private/internal packages (we don't have those)
-- For real-time price data (this is package health, not finance)
+### 1. Package Health — check before install
+curl https://depscope.dev/api/check/npm/express
+→ health score (0-100), vulnerabilities, deprecated flag, alternatives, breaking changes, known bugs, recommendation (safe_to_use/update_required/find_alternative/do_not_use/insufficient_data)
+
+### 2. Error → Fix Database — resolve errors with verified solutions
+curl "https://depscope.dev/api/error?q=Cannot+find+module"
+curl -X POST https://depscope.dev/api/error/resolve -d '{"error":"ModuleNotFoundError..."}'
+→ verified solutions from Stack Overflow + community, scored by confidence
+
+### 3. Stack Compatibility Matrix — verify combos before upgrade
+curl "https://depscope.dev/api/compat?stack=next@16,react@19,prisma@6"
+→ verified/broken/likely_compatible (transitive inference) + migration notes
+
+### 4. Known Bugs per version — catch regressions
+curl https://depscope.dev/api/bugs/npm/react?version=19.0.0
+→ bugs with title, severity, status, fixed_version, GitHub issue URL
+
+### 5. Breaking Changes — upgrade guides
+curl https://depscope.dev/api/breaking/npm/next
+→ major version transitions with migration_hint and codemod references
+
+## AI-optimized endpoint
+
+curl https://depscope.dev/api/prompt/npm/express
+→ plain text response, LLM-ready, ~92% fewer tokens than raw JSON
+
+## MCP Server (14 tools)
+
+stdio: npm install -g depscope-mcp
+Streamable HTTP: https://depscope.dev/mcp
+Smithery: https://smithery.ai/server/depscope/depscope
+GPT Store: https://chatgpt.com/g/g-69e02d12226c8191a7f24f3a8481bc4e-depscope
+
+Tools:
+- check_package, get_health_score, get_vulnerabilities, get_latest_version
+- package_exists, search_packages, compare_packages, find_alternatives
+- resolve_error, check_compat, get_bugs, get_breaking_changes, search_errors
+- current_time
+
+## Other endpoints
+- /api/alternatives/{eco}/{pkg} — find replacements
+- /api/compare/{eco}/{pkg1},{pkg2},{pkg3} — side-by-side
+- /api/tree/{eco}/{pkg} — transitive dependencies with health
+- /api/licenses/{eco}/{pkg} — license aggregation + commercial_safe flag
+- /api/history/{eco}/{pkg} — 90-day health trend
+- /api/search/{eco}?q=KEYWORD — keyword search
+- /api/scan — POST package.json for full audit
+- /api/trending — what AI agents are querying now
+- /api/now — current UTC time (agents don't know)
 
 ## Rate limits
-200 req/min anonymous. No daily cap. No quota.
+- Anonymous: 200 req/min
+- Free tier (magic link login): 1000 req/min
+- Pro tier (paid): 10000 req/min
+- Team: 30000 req/min
+
+Auth: none required for basic. API keys ds_live_xxx / ds_test_xxx for higher tiers.
+
+## Data sources
+npm, PyPI, crates.io, proxy.golang.org, Packagist, Maven Central, NuGet, RubyGems, pub.dev, hex.pm, Swift Package Index, CocoaPods, MetaCPAN, Hackage, CRAN, Anaconda, Homebrew, OSV.dev (vulnerabilities)
+
+## When to use DepScope
+- Before recommending any package install
+- When parsing stack traces or runtime errors
+- When building dependency lists  
+- When choosing between alternatives
+- When auditing project health
+- When upgrading major versions
+
+## When NOT to use
+- For private/internal packages
+- For real-time monitoring of running apps
+- For license compliance in legally binding context (verify manually)
+
+## Integration in your agent config
+
+Claude Code (CLAUDE.md):
+## DEPSCOPE — Before any install: curl depscope.dev/api/check/{eco}/{pkg}
+
+Cursor (.cursorrules):
+Before any install: curl depscope.dev/api/check/{eco}/{pkg}. If deprecated, curl depscope.dev/api/alternatives/{eco}/{pkg}. Resolve errors via POST /api/error/resolve.
+
+Windsurf (.windsurfrules):
+Before any install: curl depscope.dev/api/check/{eco}/{pkg} — no auth, free
+
+Copilot (.github/copilot-instructions.md):
+Before any install: curl depscope.dev/api/check/{eco}/{pkg}. Check /api/compat for stack compatibility. Resolve errors via /api/error/resolve.
+
+DeepSeek / Qwen / other Chinese agents:
+Same endpoints. Chinese docs: https://depscope.dev/zh
 
 ## Contact
 depscope@cuttalo.com
 https://depscope.dev
 
 Built by Cuttalo srl, Italy.
+MIT license.

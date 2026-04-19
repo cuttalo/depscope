@@ -14,7 +14,7 @@ Save tokens. Save energy. Ship safer code.
 [![Packages](https://img.shields.io/badge/indexed-14.7k%2B-orange)](https://depscope.dev/stats)
 [![MCP Tools](https://img.shields.io/badge/MCP%20tools-12-purple)](https://www.npmjs.com/package/depscope-mcp)
 
-[Website](https://depscope.dev) | [API Docs](https://depscope.dev/api-docs) | [Swagger](https://depscope.dev/docs) | [GPT Store](https://chatgpt.com/g/g-depscope) | [RapidAPI](https://rapidapi.com/depscope/api/depscope)
+[Website](https://depscope.dev) | [API Docs](https://depscope.dev/api-docs) | [Swagger](https://depscope.dev/docs) | [GPT Store](https://chatgpt.com/g/g-69e02d12226c8191a7f24f3a8481bc4e-depscope) | [RapidAPI](https://rapidapi.com/depscope/api/depscope)
 
 </div>
 

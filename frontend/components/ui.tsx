@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { CookieSettingsLink } from "./CookieSettingsLink";
 
 /* ============================================================
  * CARD
@@ -334,6 +335,7 @@ export function Footer() {
             <a href="/popular" className="hover:text-[var(--accent)] transition">Popular Packages</a>
             <a href="/stats" className="hover:text-[var(--accent)] transition">Coverage</a>
             <a href="/.well-known/ai-plugin.json" className="hover:text-[var(--accent)] transition">AI Plugin</a>
+            <a href="/pitch" className="hover:text-[var(--accent)] transition">Watch the pitch (60s)</a>
           </div>
         </div>
         <div>
@@ -341,11 +343,18 @@ export function Footer() {
             Legal
           </div>
           <div className="flex flex-col gap-1 text-xs">
+            <a href="/legal" className="hover:text-[var(--accent)] transition">Legal hub</a>
             <a href="/privacy" className="hover:text-[var(--accent)] transition">Privacy Policy</a>
+            <a href="/terms" className="hover:text-[var(--accent)] transition">Terms of Service</a>
+            <a href="/cookies" className="hover:text-[var(--accent)] transition">Cookie Policy</a>
+            <a href="/aup" className="hover:text-[var(--accent)] transition">Acceptable Use</a>
+            <a href="/attribution" className="hover:text-[var(--accent)] transition">Attribution</a>
+            <a href="/dpa" className="hover:text-[var(--accent)] transition">DPA</a>
+            <a href="/subprocessors" className="hover:text-[var(--accent)] transition">Sub-processors</a>
+            <a href="/security" className="hover:text-[var(--accent)] transition">Security</a>
+            <a href="/imprint" className="hover:text-[var(--accent)] transition">Imprint</a>
+            <CookieSettingsLink />
             <a href="/contact" className="hover:text-[var(--accent)] transition">Contact</a>
-            <a href="mailto:depscope@cuttalo.com" className="hover:text-[var(--accent)] transition">
-              depscope@cuttalo.com
-            </a>
             <a href="/zh" className="hover:text-[var(--accent)] transition">中文</a>
           </div>
         </div>
