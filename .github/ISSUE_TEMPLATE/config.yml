@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security issue
+    url: https://depscope.dev/security/disclosure
+    about: Please follow our responsible-disclosure policy for vulnerabilities.
+  - name: Feedback / questions
+    url: mailto:depscope@cuttalo.com
+    about: General questions, integrations, partnerships.
