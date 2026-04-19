@@ -1,0 +1,26 @@
+{
+  "name": "depscope-mcp",
+  "version": "0.2.0",
+  "description": "MCP server for DepScope - Package Intelligence for AI Agents",
+  "main": "index.js",
+  "bin": {
+    "depscope-mcp": "./index.js"
+  },
+  "type": "module",
+  "keywords": [
+    "mcp",
+    "dependencies",
+    "security",
+    "npm",
+    "pypi",
+    "ai-agents"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vincenzorubino27031980/depscope.git"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  }
+}

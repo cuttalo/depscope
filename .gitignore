@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+.next/
+.turbo/
+*.log
+npm-debug.log*
+
+# Env / credentials
+.env
+.env.*
+!.env.example
+config/*.json
+!config/*.example.json
+
+# Backups
+*.bak
+*.bak.*
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Data (heavy, local-only)
+data/
+*.db
+*.sqlite
+
+# Logs
+logs/
+*.log
+
+# Runtime
+.pm2/
+pm2.log
+*.bak_*
+ecosystem.config.js
+
+# Python cache
+__pycache__/
+*.pyc
+
+# All backup files
+*.bak
+*.bak.*
+*.bak_*

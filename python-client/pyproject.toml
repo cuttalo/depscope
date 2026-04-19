@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "depscope"
+version = "0.1.0"
+description = "Python client for DepScope — Package Intelligence for AI Agents"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.8"
+dependencies = ["httpx>=0.24"]
+keywords = ["package-health", "npm", "pypi", "cargo", "vulnerabilities", "ai-agents"]
+authors = [{name = "Cuttalo srl", email = "depscope@cuttalo.com"}]
+
+[project.urls]
+Homepage = "https://depscope.dev"
+Documentation = "https://depscope.dev/api-docs"

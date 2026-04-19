@@ -1,0 +1,189 @@
+# DepScope
+> Package Intelligence for AI Agents
+
+DepScope checks package health, vulnerabilities, versions, error-to-fix resolution, and stack compatibility so AI agents don't have to. We do the work once, every agent benefits.
+
+Current scale: 14,700+ packages indexed across 17 ecosystems, 402 vulnerabilities tracked, 12 MCP tools, 3 verticals on one shared free API.
+
+Positioning: save tokens, save energy, ship safer code.
+
+## API
+Base URL: https://depscope.dev
+Authentication: None required for public endpoints. Optional API keys (`ds_live_xxx` / `ds_test_xxx`) for higher limits and usage analytics via magic-link login.
+Rate Limit: 200 req/min anonymous
+Response Format: JSON (or plain text on /api/prompt)
+
+## Endpoints
+
+### Check Package (full report)
+GET /api/check/{ecosystem}/{package}
+Returns: health score (0-100), vulnerabilities, versions, recommendation
+Example: curl https://depscope.dev/api/check/npm/express
+
+### LLM-optimized plain text (saves ~74% tokens)
+GET /api/prompt/{ecosystem}/{package}
+Returns: same info as /check, pre-formatted as compact plain text for LLM consumption
+Example: curl https://depscope.dev/api/prompt/pypi/django
+Use: when the response is fed directly into an LLM context window
+
+### Latest Version (fastest)
+GET /api/latest/{ecosystem}/{package}
+Returns: just the latest version number and deprecation status
+Example: curl https://depscope.dev/api/latest/npm/react
+Use: before suggesting any package install
+
+### Package Exists
+GET /api/exists/{ecosystem}/{package}
+Returns: true/false
+Example: curl https://depscope.dev/api/exists/npm/mypackage
+Use: before suggesting any package to avoid hallucinating names
+
+### Search Packages
+GET /api/search/{ecosystem}?q={keywords}
+Returns: list of matching packages with descriptions
+Example: curl https://depscope.dev/api/search/npm?q=http+client
+Use: when user needs a package for a specific purpose
+
+### Alternatives
+GET /api/alternatives/{ecosystem}/{package}
+Returns: alternative packages with reasons
+Example: curl https://depscope.dev/api/alternatives/npm/request
+Use: when a package is deprecated or unhealthy
+
+### Compare Packages
+GET /api/compare/{ecosystem}/{pkg1},{pkg2},{pkg3}
+Returns: ranked comparison with winner
+Example: curl https://depscope.dev/api/compare/npm/express,fastify,hono
+
+### Vulnerabilities
+GET /api/vulns/{ecosystem}/{package}
+Returns: CVEs affecting the latest version only (not historical)
+Example: curl https://depscope.dev/api/vulns/pypi/django
+
+### Scan Project
+POST /api/scan
+Body: {"ecosystem":"npm","packages":{"express":"*","lodash":"*"}}
+Returns: project risk level and per-package audit
+
+### Health Score
+GET /api/health/{ecosystem}/{package}
+Returns: score (0-100) with breakdown by: maintenance, security, popularity, maturity, community
+
+### Health History (Level 2)
+GET /api/history/{ecosystem}/{package}
+Returns: 90-day health trend with data points
+
+### Dependency Tree (Level 2)
+GET /api/tree/{ecosystem}/{package}
+Returns: transitive dependencies with per-node health
+
+### Bundle Size (Level 2)
+GET /api/bundle/{ecosystem}/{package}
+Returns: min+gzip bundle size estimation
+
+### TypeScript Quality (Level 2)
+GET /api/types/{ecosystem}/{package}
+Returns: TypeScript typing quality and DefinitelyTyped coverage
+
+### License Audit (Level 2)
+GET /api/licenses/{ecosystem}/{package}
+Returns: license aggregation across deps, risk flags
+
+### Trending (public)
+GET /api/trending
+Returns: currently trending packages across all ecosystems
+
+## Vertical 2 — Error -> Fix Database
+
+### Error full-text search
+GET /api/error
+Query: ?q={keywords}&limit=5
+Returns: verified matches (pattern, solution, confidence, source URL)
+
+### Error resolve (POST a stack trace)
+POST /api/error/resolve
+Body: {"error":"...stack trace or message...","context":{}}
+Returns: exact_match | similar_matches | not_found — with solution steps + source URL
+Use: when an agent hits a runtime error, before searching the web
+
+### Error by hash
+GET /api/error/{hash}
+Returns: a single verified error entry by its stable sha256 signature
+
+## Vertical 3 — Compatibility Matrix
+
+GET /api/compat
+Query: ?stack=next@15,react@19,prisma@6
+Returns: verified | compatible | incompatible | warning | untested — with similar verified stacks if no exact match
+Use: before suggesting a version bump or new dep addition
+
+POST /api/compat
+Body: {"packages":{"next":"15","react":"19","prisma":"6"}}
+Returns: same as GET but supports arbitrary stack shapes
+
+## Vertical 4 — Known Bugs per version
+
+GET /api/bugs/{ecosystem}/{package}
+Query: ?version={affected_version}
+Returns: non-CVE known bugs (regressions, production incidents, edge cases that never reached a CVE)
+Use: when a user reports unexpected behavior — often a known bug in that specific version with a documented fix
+
+GET /api/bugs/search
+Query: ?q={keywords}&limit=20
+Returns: free-text search across the bug database
+
+## Vertical 5 — Breaking Changes per major version
+
+GET /api/breaking/{ecosystem}/{package}
+Query: ?from_version={major}&to_version={major}
+Returns: verified breaking changes between two major versions, each with migration_hint (codemod / config diff / replacement API)
+Coverage: React 18->19, Next 14->15 & 15->16, Prisma 5->6, Express 4->5, Node 18->20->22, TypeScript, ESLint 8->9, Tailwind 3->4, Vite 5->6, Pydantic v1->v2, SQLAlchemy 1.4->2.0, Django 4->5, Python 3.11->3.13, Rust edition 2024
+Use: BEFORE suggesting a major-version bump
+
+## Alternatives — deprecated / unhealthy package replacements
+
+GET /api/alternatives/{ecosystem}/{package}
+Returns: curated alternatives sorted by score. Each entry has {name, reason, builtin}. `builtin: true` flags language/stdlib replacements (fs.rm, crypto.randomUUID, std::sync::LazyLock) that are NOT installable from a registry.
+Use: when `/api/check` recommendation is `find_alternative`, or when the user asks "what should I use instead of X"
+
+## Current Time
+GET /api/now
+Returns: current UTC date, time, unix timestamp, day of week
+
+## Ecosystems (17)
+npm, pypi, cargo, go, composer, maven, nuget, rubygems, pub, hex, swift, cocoapods, cpan, hackage, cran, conda, homebrew
+
+## Health Score Breakdown
+- Maintenance (25): days since last release
+- Security (25): known CVEs from OSV
+- Popularity (20): weekly downloads
+- Maturity (15): total version count
+- Community (15): active maintainers
+
+## Recommendation Actions
+- safe_to_use: package is healthy
+- update_required: has vulnerabilities, update to latest
+- use_with_caution: low health score
+- find_alternative: deprecated
+- do_not_use: critical vulnerabilities
+
+## MCP (14 tools)
+npm install -g depscope-mcp
+Remote URL: https://depscope.dev/mcp
+Tools:
+  Package health:   check_package, get_health_score, get_vulnerabilities,
+                    get_latest_version, package_exists, get_package_prompt,
+                    compare_packages, scan_project
+  Verticals:        find_alternatives, get_breaking_changes, get_known_bugs,
+                    check_compatibility, resolve_error, search_errors
+
+## Integration
+- ChatGPT Actions: https://depscope.dev/openapi-gpt.json
+- OpenAPI spec: https://depscope.dev/openapi.json
+- AI Plugin: https://depscope.dev/.well-known/ai-plugin.json
+- MCP Server: https://github.com/vincenzorubino27031980/depscope-mcp
+- NPM: npm install -g depscope-mcp
+
+## Contact
+depscope@cuttalo.com
+Built by Cuttalo srl, Italy
