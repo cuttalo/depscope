@@ -937,18 +937,57 @@ async def check_typosquat(ecosystem: str, package: str):
     ecosystem = ecosystem.lower()
     pool = await get_pool()
     async with pool.acquire() as conn:
+        # 1) Pre-computed candidates (fast path, curated)
         rows = await conn.fetch("""
             SELECT suspect, legitimate, distance, downloads_suspect, downloads_legit, reason
             FROM typosquat_candidates
             WHERE ecosystem=$1 AND LOWER(suspect)=LOWER($2)
             ORDER BY distance, downloads_legit DESC
         """, ecosystem, package)
+        source = "precomputed"
+        # 2) Runtime fallback: Levenshtein distance vs. top packages in same ecosystem
+        if not rows:
+            fallback = await conn.fetch("""
+                WITH candidate AS (
+                    SELECT downloads_weekly AS dl
+                    FROM packages
+                    WHERE ecosystem=$1 AND LOWER(name)=LOWER($2)
+                )
+                SELECT
+                    LOWER(name) AS legitimate,
+                    downloads_weekly AS downloads_legit,
+                    levenshtein(LOWER($2), LOWER(name)) AS distance,
+                    COALESCE((SELECT dl FROM candidate), 0) AS downloads_suspect
+                FROM packages
+                WHERE ecosystem=$1
+                  AND downloads_weekly > 1000000
+                  AND LOWER(name) <> LOWER($2)
+                  AND levenshtein(LOWER($2), LOWER(name)) <= 2
+                ORDER BY distance, downloads_weekly DESC
+                LIMIT 3
+            """, ecosystem, package)
+            # Only flag as suspect if the queried package is clearly less popular (ratio > 100x)
+            # or absent from our index entirely — the classic typosquat fingerprint.
+            real_suspects = []
+            for r in fallback:
+                if r["downloads_suspect"] == 0 or r["downloads_legit"] / max(r["downloads_suspect"], 1) >= 100:
+                    real_suspects.append({
+                        "suspect": package,
+                        "legitimate": r["legitimate"],
+                        "distance": r["distance"],
+                        "downloads_suspect": r["downloads_suspect"],
+                        "downloads_legit": r["downloads_legit"],
+                        "reason": f"Levenshtein distance {r['distance']} from popular package {r['legitimate']}",
+                    })
+            rows = real_suspects
+            source = "runtime_levenshtein"
     if not rows:
         return {"package": package, "ecosystem": ecosystem, "is_suspected_typosquat": False, "targets": []}
     return {
         "package": package,
         "ecosystem": ecosystem,
         "is_suspected_typosquat": True,
+        "detection_source": source,
         "targets": [
             {
                 "legitimate_package": r["legitimate"],
@@ -960,7 +999,7 @@ async def check_typosquat(ecosystem: str, package: str):
             }
             for r in rows
         ],
-        "note": "Suspect packages are those with much smaller downloads and a name within Levenshtein 1-2 of a top-500 legit package.",
+        "note": "Pre-computed candidates + runtime Levenshtein fallback against top-1M-downloads packages. Flagged when name is within distance 2 AND popularity ratio >= 100x (or package is unknown to the index).",
     }
 
 

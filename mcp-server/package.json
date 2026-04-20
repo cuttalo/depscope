@@ -1,6 +1,6 @@
 {
   "name": "depscope-mcp",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "MCP server for DepScope - Package Intelligence for AI Agents",
   "main": "index.js",
   "bin": {

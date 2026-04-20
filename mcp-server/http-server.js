@@ -23,7 +23,7 @@ const sessions = new Map();
 
 function createServer() {
   const s = new Server(
-    { name: "depscope", version: "0.4.0" },
+    { name: "depscope", version: "0.4.1" },
     { capabilities: { tools: {} } }
   );
   s.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
@@ -39,7 +39,7 @@ const httpServer = http.createServer(async (req, res) => {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
       service: "depscope-mcp-http",
-      version: "0.4.0",
+      version: "0.4.1",
       tools: TOOLS.length,
       endpoint: "/mcp",
       sessions: sessions.size,

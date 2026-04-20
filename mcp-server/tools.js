@@ -292,7 +292,7 @@ export const TOOLS = [
 ];
 
 function headers() {
-  const h = { "User-Agent": "DepScope-MCP/0.4" };
+  const h = { "User-Agent": "DepScope-MCP/0.4.1" };
   if (API_KEY) h["X-API-Key"] = API_KEY;
   return h;
 }
@@ -352,8 +352,21 @@ export async function handleToolCall(name, args) {
         const csv = args.packages.map(encodeURIComponent).join(",");
         return ok(await getJson(`/api/compare/${args.ecosystem}/${csv}`));
       }
-      case "scan_project":
-        return ok(await postJson(`/api/scan`, { ecosystem: args.ecosystem, packages: args.packages }));
+      case "scan_project": {
+        let pkgs = args.packages;
+        if (typeof pkgs === "string") { try { pkgs = JSON.parse(pkgs); } catch {} }
+        // Backend /api/scan requires dict {name: version}. Accept either array or dict from the caller.
+        if (Array.isArray(pkgs)) {
+          pkgs = Object.fromEntries(pkgs.map(e => {
+            const at = e.lastIndexOf("@");
+            return at > 0 ? [e.slice(0, at), e.slice(at + 1)] : [e, "*"];
+          }));
+        }
+        if (!pkgs || typeof pkgs !== "object" || Object.keys(pkgs).length === 0) {
+          return fail("\"packages\" must be a non-empty array or {name: version} object");
+        }
+        return ok(await postJson("/api/scan", { ecosystem: args.ecosystem, packages: pkgs }));
+      }
       case "find_alternatives":
         return ok(await getJson(`/api/alternatives/${args.ecosystem}/${encodePkg(args.package)}`));
       case "get_breaking_changes": {
@@ -369,8 +382,14 @@ export async function handleToolCall(name, args) {
         const suffix = args.version ? `?version=${encodeURIComponent(args.version)}` : "";
         return ok(await getJson(`/api/bugs/${args.ecosystem}/${pkg}${suffix}`));
       }
-      case "check_compatibility":
-        return ok(await postJson(`/api/compat`, { packages: args.packages }));
+      case "check_compatibility": {
+        let pkgs = args.packages;
+        if (typeof pkgs === "string") { try { pkgs = JSON.parse(pkgs); } catch {} }
+        if (!pkgs || typeof pkgs !== "object" || Array.isArray(pkgs) || Object.keys(pkgs).length === 0) {
+          return fail("\"packages\" must be a non-empty object, e.g. {\"next\":\"16\",\"react\":\"19\"}");
+        }
+        return ok(await postJson("/api/compat", { packages: pkgs }));
+      }
       case "resolve_error":
         return ok(await postJson(`/api/error/resolve`, { error: args.error, context: args.context }));
       case "search_errors": {

@@ -9,7 +9,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import { TOOLS, handleToolCall } from "./tools.js";
 
 const server = new Server(
-  { name: "depscope", version: "0.4.0" },
+  { name: "depscope", version: "0.4.1" },
   { capabilities: { tools: {} } }
 );
 

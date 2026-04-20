@@ -201,16 +201,47 @@ async def fetch_go(name: str) -> dict | None:
     elif name.startswith("golang.org/x/"):
         repo_url = f"https://github.com/golang/{name.split('/')[-1]}"
 
-    # Try to get downloads from pkg.go.dev (no direct API, skip)
+    # Enrich from deps.dev: license (per-version) + project stars (downloads proxy)
+    from urllib.parse import quote
+    license = ""
+    stars = 0
+    description = ""
+    dev_encoded = quote(name, safe="")
+    try:
+        async with aiohttp.ClientSession() as session:
+            # Per-version metadata -> license
+            if version:
+                async with session.get(
+                    f"https://api.deps.dev/v3/systems/go/packages/{dev_encoded}/versions/{quote(version, safe="")}",
+                    timeout=aiohttp.ClientTimeout(total=8),
+                ) as r:
+                    if r.status == 200:
+                        v = await r.json()
+                        lic = v.get("licenses") or []
+                        if lic:
+                            license = lic[0] if isinstance(lic[0], str) else (lic[0].get("name") or "")
+            # Project-level -> stars (proxy for popularity in Go)
+            async with session.get(
+                f"https://api.deps.dev/v3/projects/{dev_encoded}",
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as r:
+                if r.status == 200:
+                    proj = await r.json()
+                    stars = int(proj.get("starsCount") or 0)
+                    description = proj.get("description") or ""
+    except Exception:
+        pass
+
     return {
         "ecosystem": "go",
         "name": name,
         "latest_version": version,
-        "description": "",
-        "license": "",
+        "description": description,
+        "license": license,
         "homepage": f"https://pkg.go.dev/{name}",
         "repository": repo_url,
-        "downloads_weekly": 0,
+        # Go has no centralized download telemetry; use deps.dev stars as a popularity proxy
+        "downloads_weekly": stars,
         "maintainers_count": 0,
         "deprecated": False,
         "deprecated_message": None,
