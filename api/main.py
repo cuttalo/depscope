@@ -150,7 +150,9 @@ async def _augment_check(conn, ecosystem, package, payload):
     # 4) Malicious flag
     mal = await conn.fetchrow("""
         SELECT vuln_id, summary FROM malicious_packages
-        WHERE ecosystem=$1 AND LOWER(package_name)=LOWER($2) LIMIT 1
+        WHERE ecosystem=$1 AND LOWER(package_name)=LOWER($2)
+          AND (data_json->>'withdrawn' IS NULL)
+        LIMIT 1
     """, ecosystem, package)
     if mal:
         payload["malicious"] = {
@@ -1007,7 +1009,9 @@ async def check_malicious(ecosystem: str, package: str):
         row = await conn.fetchrow("""
             SELECT vuln_id, published_at, summary, source
             FROM malicious_packages
-            WHERE ecosystem=$1 AND LOWER(package_name)=LOWER($2) LIMIT 1
+            WHERE ecosystem=$1 AND LOWER(package_name)=LOWER($2)
+              AND (data_json->>'withdrawn' IS NULL)
+            LIMIT 1
         """, ecosystem, package)
     if not row:
         return {"package": package, "ecosystem": ecosystem, "is_malicious": False}
@@ -2461,6 +2465,7 @@ async def sitemap_packages(
     limit: int = 0,
     min_downloads: int = 0,
     order: str = "name",
+    ecosystem: str | None = None,
 ):
     """Returns list of packages for sitemap generation.
 
@@ -2468,19 +2473,25 @@ async def sitemap_packages(
       - limit: max rows (0 = unlimited)
       - min_downloads: only packages with >= N weekly downloads
       - order: "name" (alpha) | "downloads" (by weekly desc)
+      - ecosystem: restrict to one ecosystem (npm, pypi, ...)
     """
     pool = await get_pool()
     order_clause = "downloads_weekly DESC, ecosystem, name" if order == "downloads" else "ecosystem, name"
+    params: list = [min_downloads]
+    where = ["downloads_weekly >= $1"]
+    if ecosystem:
+        params.append(ecosystem.lower())
+        where.append(f"ecosystem = ${len(params)}")
     sql = f"""
         SELECT ecosystem, name, downloads_weekly, updated_at
         FROM packages
-        WHERE downloads_weekly >= $1
+        WHERE {" AND ".join(where)}
         ORDER BY {order_clause}
     """
     if limit and limit > 0:
         sql += f" LIMIT {int(limit)}"
     async with pool.acquire() as conn:
-        rows = await conn.fetch(sql, min_downloads)
+        rows = await conn.fetch(sql, *params)
     return [
         {
             "ecosystem": r["ecosystem"],

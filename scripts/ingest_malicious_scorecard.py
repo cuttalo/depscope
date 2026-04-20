@@ -32,6 +32,8 @@ async def ingest_malicious(conn, session):
     print(f"[mal] got {len(data)} entries")
     n = 0
     for entry in data:
+        if entry.get("withdrawn"):
+            continue
         affected = entry.get("affected") or []
         for aff in affected:
             pkg = aff.get("package") or {}
@@ -96,6 +98,8 @@ async def ingest_malicious_per_eco(conn, session):
             except Exception:
                 continue
             if not (entry.get("id", "").startswith("MAL-") or "malicious" in (entry.get("summary","").lower())):
+                continue
+            if entry.get("withdrawn"):
                 continue
             for aff in (entry.get("affected") or []):
                 pkg = aff.get("package") or {}
