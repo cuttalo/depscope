@@ -146,7 +146,13 @@ Before any install: curl depscope.dev/api/check/{eco}/{pkg} — no auth, free
 | `GET /api/search/{eco}?q=...` | Search by keyword | "I need a library for X" |
 | `GET /api/alternatives/{eco}/{pkg}` | Replacement suggestions | When package is deprecated |
 | `GET /api/compare/{eco}/{a},{b},{c}` | Side-by-side comparison | "Express vs Fastify?" |
-| `GET /api/vulns/{eco}/{pkg}` | Vulnerability list | Security audit |
+| `GET /api/vulns/{eco}/{pkg}` | Vulnerability list (+ **CISA KEV** + **EPSS** enrichment) | Security audit with threat intel |
+| `GET /api/typosquat/{eco}/{pkg}` | Detect if a name is a typosquat of a popular package | Before letting an AI install a never-heard-of package |
+| `GET /api/maintainers/{eco}/{pkg}` | Bus factor, primary author dominance, ownership change | Maintainer trust audit |
+| `GET /api/malicious/{eco}/{pkg}` | Flagged by OpenSSF malicious-packages feed? | Block known malware |
+| `GET /api/scorecard/{eco}/{pkg}` | OSS Scorecard (OpenSSF) security posture 0-10 | Overall security hygiene |
+| `GET /api/license/{eco}/{pkg}` | License classification + commercial-safety | Compliance check |
+| `GET /api/provenance/{eco}/{pkg}` | Sigstore / PEP 740 attestations | Build-chain verification |
 | `GET /api/health/{eco}/{pkg}` | Quick score (0-100) | Fast check |
 | `GET /api/history/{eco}/{pkg}` | 90-day health trend | Tracking regressions |
 | `GET /api/tree/{eco}/{pkg}` | Transitive deps with health | Dependency audit |
