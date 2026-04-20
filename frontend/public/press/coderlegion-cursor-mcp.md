@@ -8,15 +8,21 @@ Here's the full setup in under 5 minutes.
 
 ---
 
-## Step 1 — install the MCP server
+## Step 1 — pick a transport
 
-Any terminal:
+**Option A — Remote MCP (recommended, zero install).** If your client supports remote MCP (Claude Desktop, Cursor recent, Windsurf), skip install and use the URL directly in the next step:
+
+```
+https://mcp.depscope.dev/mcp
+```
+
+**Option B — Local stdio (legacy clients).** If your client only supports stdio transport, install the npm package:
 
 ```bash
 npm install -g depscope-mcp
 ```
 
-That's the whole install. No API key, no signup, no config file.
+No API key, no signup, no config file in either case.
 
 ## Step 2 — register it with Cursor
 

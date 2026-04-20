@@ -369,7 +369,7 @@ RULES:
 - NEVER include links to any product
 - NEVER mention DepScope by name
 - Be genuinely helpful and add value
-- Use real data: 14,700+ packages analyzed across 17 ecosystems, 8,300+ score below 60/100, 402 vulnerabilities tracked, 12 MCP tools
+- Use real data: 14,700+ packages analyzed across 17 ecosystems, 8,300+ score below 60/100, 402 vulnerabilities tracked, 20 MCP tools (remote: https://mcp.depscope.dev/mcp)
 - Specific data points: ms gets 414M downloads/week with no updates, request deprecated since 2020 still 16M/week
 - Keep it short (max 4 lines)
 - Sound like a knowledgeable developer, not a marketer
@@ -584,7 +584,7 @@ Write a technical article about:
 
 RULES:
 - At least 800 words
-- Include real data: 14,700+ packages indexed across 17 ecosystems (npm, PyPI, Cargo, Go, Maven, NuGet, RubyGems + 10 more), 8,300+ score below 60/100, 402 vulnerabilities tracked, 12 MCP tools, 3 verticals (package health + error->fix + compat matrix)
+- Include real data: 14,700+ packages indexed across 17 ecosystems (npm, PyPI, Cargo, Go, Maven, NuGet, RubyGems + 10 more), 8,300+ score below 60/100, 402 vulnerabilities tracked, 20 MCP tools (remote), 3 verticals (package health + error->fix + compat matrix)
 - Use specific examples: ms (414M/week, no updates), request (deprecated 2020, 16M/week)
 - Technical, informative, developer audience
 - Include code examples where relevant
