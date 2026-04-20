@@ -20,32 +20,26 @@ const SNIPPETS: Snippet[] = [
     file: "CLAUDE.md (project root or ~/.claude/CLAUDE.md)",
     lang: "markdown",
     note: "Drop into your CLAUDE.md — Claude Code picks it up on next session.",
-    snippet: `## DEPSCOPE — before suggesting any package install
-Before recommending any npm / PyPI / Cargo / Go / Maven / NuGet / RubyGems / etc. package, call:
-
+    snippet: `## DEPSCOPE
+Before suggesting any npm/PyPI/Cargo/Go/etc. package, call:
   curl https://depscope.dev/api/prompt/{ecosystem}/{package}
-
-Use the returned health, CVE, and deprecation info to decide.
-The compact /api/prompt endpoint returns a ~74% smaller payload than raw registry JSON — burns fewer input tokens.
-Free, no auth, 200 req/min, 17 ecosystems. Source: https://github.com/cuttalo/depscope`,
+Reject if action="avoid". Free, no auth, 17 ecosystems.`,
   },
   {
     id: "cursor",
     label: "Cursor",
     file: ".cursorrules",
     lang: "text",
-    snippet: `Before recommending or installing any package, call: curl https://depscope.dev/api/prompt/{ecosystem}/{package}
-Ecosystems: npm, pypi, cargo, go, maven, nuget, rubygems, composer, pub, hex, swift, cocoapods, cpan, hackage, cran, conda, homebrew.
-Use the returned health/CVE/deprecation data to validate suggestions. If deprecated, call /api/alternatives/{ecosystem}/{package}.
-Compact endpoint, no auth, free.`,
+    snippet: `Before any package install: curl https://depscope.dev/api/prompt/{ecosystem}/{package}
+Reject if action="avoid". If deprecated: /api/alternatives/{ecosystem}/{package}. 17 ecosystems, free.`,
   },
   {
     id: "windsurf",
     label: "Windsurf",
     file: ".windsurfrules",
     lang: "text",
-    snippet: `Before recommending any package install, call: curl https://depscope.dev/api/prompt/{ecosystem}/{package}
-Use the returned health and vulnerability info to decide. Covers 17 ecosystems. Free, no auth.`,
+    snippet: `Before any package install: curl https://depscope.dev/api/prompt/{ecosystem}/{package}
+Reject if action="avoid". 17 ecosystems, free.`,
   },
   {
     id: "copilot",
@@ -62,14 +56,14 @@ Prefer alternatives returned by /api/alternatives/{ecosystem}/{package}. Free, n
     label: "Aider",
     file: "conventions.md (use with `aider --read conventions.md`)",
     lang: "markdown",
-    snippet: `Dependency rule: before suggesting any package install, fetch https://depscope.dev/api/prompt/{ecosystem}/{package} and use its health + CVE data to validate the recommendation. Do not install packages with action="avoid". Covers 17 ecosystems. No auth.`,
+    snippet: `Before any package install: fetch https://depscope.dev/api/prompt/{ecosystem}/{package}. Reject if action="avoid". 17 ecosystems.`,
   },
   {
     id: "cline",
     label: "Cline / Continue",
     file: "system prompt or custom instructions",
     lang: "text",
-    snippet: `Before installing any package, check https://depscope.dev/api/prompt/{ecosystem}/{package} for live CVE, deprecation, and health data. Use the response to accept or reject the suggestion. 17 ecosystems. Free, no auth.`,
+    snippet: `Before any package install: curl https://depscope.dev/api/prompt/{ecosystem}/{package}. Reject if action="avoid". 17 ecosystems.`,
   },
   {
     id: "mcp",

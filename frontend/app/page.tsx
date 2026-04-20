@@ -126,41 +126,38 @@ const SETUP_TABS = [
     id: "claude-code",
     label: "Claude Code",
     file: "CLAUDE.md (project or ~/.claude/CLAUDE.md)",
-    snippet: `## DEPSCOPE — before suggesting any package install
-Before recommending any npm / PyPI / Cargo / Go / Maven / NuGet / RubyGems / etc. package, call:
+    snippet: `## DEPSCOPE
+Before suggesting any npm/PyPI/Cargo/Go/etc. package, call:
   curl https://depscope.dev/api/prompt/{ecosystem}/{package}
-
-Use the returned health, CVE, and deprecation info to decide.
-The compact /api/prompt endpoint returns a ~74% smaller payload than raw registry JSON — burns fewer input tokens.
-Free, no auth, 200 req/min, 17 ecosystems. Source: https://github.com/cuttalo/depscope`,
+Reject if action="avoid". Free, no auth, 17 ecosystems.`,
   },
   {
     id: "cursor",
     label: "Cursor",
     file: ".cursorrules",
-    snippet: `Before recommending or installing any package, call: curl https://depscope.dev/api/prompt/{ecosystem}/{package} (ecosystems: npm, pypi, cargo, go, maven, nuget, rubygems, composer, pub, hex, swift, cocoapods, cpan, hackage, cran, conda, homebrew). Use the returned JSON health/CVE/deprecation data to validate suggestions. Compact endpoint, no auth.
-If the package is deprecated, call /api/alternatives/{ecosystem}/{package} for a safe replacement.`,
+    snippet: `Before any package install: curl https://depscope.dev/api/prompt/{ecosystem}/{package}
+Reject if action="avoid". If deprecated: /api/alternatives/{ecosystem}/{package}. 17 ecosystems, free.`,
   },
   {
     id: "windsurf",
     label: "Windsurf",
     file: ".windsurfrules",
-    snippet: `Before recommending any package install, call: curl https://depscope.dev/api/prompt/{ecosystem}/{package}
-Use the returned health and vulnerability info to decide. Covers npm, PyPI, Cargo, and 14 other ecosystems. Free, no auth.`,
+    snippet: `Before any package install: curl https://depscope.dev/api/prompt/{ecosystem}/{package}
+Reject if action="avoid". 17 ecosystems, free.`,
   },
   {
     id: "copilot",
     label: "GitHub Copilot",
     file: ".github/copilot-instructions.md",
     snippet: `## Package validation
-Before suggesting any npm / PyPI / Cargo / etc. package, check it via https://depscope.dev/api/prompt/{ecosystem}/{package}.
-If the response flags a CVE, deprecation, or "action: avoid", do not suggest that package. Prefer alternatives returned by /api/alternatives/{ecosystem}/{package}. Free, no auth.`,
+Before suggesting any package: curl https://depscope.dev/api/prompt/{ecosystem}/{package}
+Reject if action="avoid". Alternatives: /api/alternatives/{ecosystem}/{package}. Free.`,
   },
   {
     id: "aider",
     label: "Aider",
     file: "conventions.md + aider --read",
-    snippet: `Dependency rule: before suggesting any package install, fetch https://depscope.dev/api/prompt/{ecosystem}/{package} and use its health + CVE data to validate the recommendation. Do not install packages with action="avoid". Covers 17 ecosystems. No auth.`,
+    snippet: `Before any package install: fetch https://depscope.dev/api/prompt/{ecosystem}/{package}. Reject if action="avoid". 17 ecosystems.`,
   },
   {
     id: "mcp",
