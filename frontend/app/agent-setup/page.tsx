@@ -66,11 +66,25 @@ Prefer alternatives returned by /api/alternatives/{ecosystem}/{package}. Free, n
     snippet: `Before any package install: curl https://depscope.dev/api/prompt/{ecosystem}/{package}. Reject if action="avoid". 17 ecosystems.`,
   },
   {
-    id: "mcp",
-    label: "MCP (Claude Desktop, Cursor, Windsurf)",
+    id: "mcp-remote",
+    label: "MCP remote (no install)",
     file: "mcp.json / claude_desktop_config.json",
     lang: "json",
-    note: "First: npm install -g depscope-mcp. Then add this to your MCP client config. 14 tools auto-registered.",
+    note: "Zero install. Claude Desktop / Cursor / Windsurf with remote-MCP support connect via URL. 20 tools auto-registered.",
+    snippet: `{
+  "mcpServers": {
+    "depscope": {
+      "url": "https://mcp.depscope.dev/mcp"
+    }
+  }
+}`,
+  },
+  {
+    id: "mcp-local",
+    label: "MCP local (stdio)",
+    file: "mcp.json / claude_desktop_config.json",
+    lang: "json",
+    note: "For MCP clients without remote support. Requires: npm install -g depscope-mcp.",
     snippet: `{
   "mcpServers": {
     "depscope": {

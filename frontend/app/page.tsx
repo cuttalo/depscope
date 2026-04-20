@@ -161,23 +161,19 @@ Reject if action="avoid". Alternatives: /api/alternatives/{ecosystem}/{package}.
   },
   {
     id: "mcp",
-    label: "MCP server (Claude Desktop / Cursor)",
+    label: "MCP remote (Claude Desktop / Cursor)",
     file: "mcp.json / claude_desktop_config.json",
-    snippet: `// Install the MCP server:
-// npm install -g depscope-mcp
-
-// Then add to your MCP client config:
-{
+    snippet: `{
   "mcpServers": {
     "depscope": {
-      "command": "npx",
-      "args": ["depscope-mcp"]
+      "url": "https://mcp.depscope.dev/mcp"
     }
   }
 }
-
-// 14 tools auto-registered: check_package, get_vulnerabilities, resolve_error, find_alternatives, compare_packages, and more.
-// Your agent will call them automatically when suggesting packages.`,
+// Zero install. 20 tools auto-registered.
+// Fallback for clients without remote-MCP support:
+//   npm install -g depscope-mcp
+//   then use { command: "npx", args: ["depscope-mcp"] }`,
   },
   {
     id: "chatgpt",
