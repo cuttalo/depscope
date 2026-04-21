@@ -10,7 +10,7 @@ import time
 TOP_URL = "https://hugovk.github.io/top-pypi-packages/top-pypi-packages.json"
 API_BASE = os.environ.get("API_BASE", "http://127.0.0.1:8000")
 DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+    "DATABASE_URL", os.environ["DATABASE_URL"]
 )
 TARGET = int(os.environ.get("TARGET", "15000"))
 CONCURRENCY = int(os.environ.get("CONCURRENCY", "8"))

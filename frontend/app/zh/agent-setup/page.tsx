@@ -33,7 +33,7 @@ const SNIPPETS: Snippet[] = [
     id: "mcp-remote",
     label: "MCP 远程 (无需安装)",
     file: "mcp.json / claude_desktop_config.json",
-    note: "零安装。Claude Desktop / Cursor / Windsurf 通过 URL 连接。自动注册 23 个工具。",
+    note: "零安装。Claude Desktop / Cursor / Windsurf 通过 URL 连接。自动注册 29 个工具。",
     snippet: `{
   "mcpServers": {
     "depscope": {

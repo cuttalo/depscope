@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 """MAILER Agent — Email Management via IMAP/SMTP.
 
@@ -19,7 +20,7 @@ import hashlib
 from .common import (
 
 SMTP_USER = "depscope@cuttalo.com"
-SMTP_PASS = "REDACTED_SMTP"
+SMTP_PASS = os.environ.get("SMTP_PASS", "")
     get_pool, log_action, update_platform_status,
     IMAP_HOST, IMAP_PORT, SMTP_HOST, SMTP_PORT,
     EMAIL_USER, EMAIL_PASS, EMAIL_FROM_NAME,

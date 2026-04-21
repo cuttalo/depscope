@@ -1,10 +1,11 @@
+import os
 """Compute maintainer trust signals for top packages.
 GitHub API rate limit: 5000/hour with token. We budget per run (top 500 cumulative).
 """
 import asyncio, asyncpg, aiohttp, re, os, sys
 from datetime import datetime, timezone, timedelta
 
-DB_URL = "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+DB_URL = os.environ["DATABASE_URL"]
 GH_TOKEN = os.environ.get("GH_TOKEN", "")
 GH_API = "https://api.github.com"
 PER_ECOSYSTEM_LIMIT = int(os.environ.get("PER_ECO", "50"))  # keep modest for a single run

@@ -1,8 +1,9 @@
+import os
 """Ingest OSS Criticality Score + download velocity + npm 2FA (signed) + PyPI Trusted Publishing."""
 import asyncio, asyncpg, aiohttp, json, csv, io, gzip
 from datetime import date, datetime, timezone, timedelta
 
-DB_URL = "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+DB_URL = os.environ["DATABASE_URL"]
 
 SYSTEM_MAP = {"npm":"NPM","pypi":"PYPI","cargo":"CARGO","go":"GO","nuget":"NUGET","rubygems":"RUBYGEMS","maven":"MAVEN"}
 

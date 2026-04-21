@@ -170,7 +170,7 @@ Reject if action="avoid". Alternatives: /api/alternatives/{ecosystem}/{package}.
     }
   }
 }
-// Zero install. 23 tools auto-registered.
+// Zero install. 29 tools auto-registered.
 // Fallback for clients without remote-MCP support:
 //   npm install -g depscope-mcp
 //   then use { command: "npx", args: ["depscope-mcp"] }`,
@@ -390,7 +390,7 @@ export default function Home() {
 
           {/* MCP tools banner */}
           <div className="mt-6 flex flex-wrap justify-center items-center gap-x-3 gap-y-1 text-[11px] text-[var(--text-faded)] font-mono">
-            <span className="tabular-nums"><span className="text-[var(--text-dim)]">{stats?.mcp_tools ?? 23}</span> MCP tools</span>
+            <span className="tabular-nums"><span className="text-[var(--text-dim)]">{stats?.mcp_tools ?? 29}</span> MCP tools</span>
             <span>·</span>
             <span className="tabular-nums"><span className="text-[var(--text-dim)]">{stats?.ecosystems?.length || 17}</span> ecosystems</span>
             <span>·</span>
@@ -674,7 +674,7 @@ export default function Home() {
                   </div>
                   <div className="p-5">
                     <Stat
-                      value={stats?.mcp_tools ?? 23}
+                      value={stats?.mcp_tools ?? 29}
                       label="MCP tools"
                       color="var(--accent)"
                     />
@@ -695,7 +695,7 @@ export default function Home() {
                   <span className="text-sm font-semibold text-[var(--text)]">Remote MCP — zero install</span>
                 </div>
                 <p className="text-sm text-[var(--text-dim)] mb-2">
-                  Claude Desktop / Cursor / Windsurf (recent versions) can connect with just a URL — no <code className="text-[var(--accent)] font-mono text-xs">npm install -g</code> needed. 23 tools auto-registered.
+                  Claude Desktop / Cursor / Windsurf (recent versions) can connect with just a URL — no <code className="text-[var(--accent)] font-mono text-xs">npm install -g</code> needed. 29 tools auto-registered.
                 </p>
                 <pre className="bg-[var(--bg-soft)] border border-[var(--border)] rounded p-3 text-xs font-mono overflow-x-auto">{`{ "mcpServers": { "depscope": { "url": "https://mcp.depscope.dev/mcp" } } }`}</pre>
               </div>
@@ -943,6 +943,83 @@ PACKAGES:
   npm/request@2.88.2  health:32  vulns:1
   npm/lodash@4.18.1  health:97  vulns:0`}
                   </pre>
+                </CardBody>
+              </Card>
+            </Section>
+
+            {/* Decision tree — which tool to call */}
+            <Section title="Which tool should I call?" description="Three decisions cover 95% of agent use cases.">
+              <Card>
+                <CardBody>
+                  <div className="grid md:grid-cols-3 gap-4 text-sm">
+                    <div className="rounded-lg border border-[var(--border)] p-4">
+                      <div className="text-xs uppercase tracking-wider text-[var(--text-faded)] mb-2">If you want…</div>
+                      <div className="font-semibold text-[var(--text)] mb-1">A decision in one paragraph</div>
+                      <div className="text-[var(--text-dim)] text-xs mb-3">SAFE / AVOID / URGENT / DO NOT INSTALL + alternatives, ready for the system prompt.</div>
+                      <code className="block font-mono text-xs text-[var(--accent)] bg-[var(--bg-input)] px-2 py-1 rounded">ai_brief(eco, pkg)</code>
+                      <div className="text-[10px] text-[var(--text-faded)] mt-2">~300 tokens · plain text</div>
+                    </div>
+                    <div className="rounded-lg border border-[var(--border)] p-4">
+                      <div className="text-xs uppercase tracking-wider text-[var(--text-faded)] mb-2">If you want…</div>
+                      <div className="font-semibold text-[var(--text)] mb-1">JSON to parse programmatically</div>
+                      <div className="text-[var(--text-dim)] text-xs mb-3">All fields (health.breakdown, vulns.details, maintainer_trust) for code/CI/UI use.</div>
+                      <code className="block font-mono text-xs text-[var(--accent)] bg-[var(--bg-input)] px-2 py-1 rounded">check_package(eco, pkg)</code>
+                      <div className="text-[10px] text-[var(--text-faded)] mt-2">~2000 tokens · full JSON</div>
+                    </div>
+                    <div className="rounded-lg border border-[var(--border)] p-4">
+                      <div className="text-xs uppercase tracking-wider text-[var(--text-faded)] mb-2">If you want…</div>
+                      <div className="font-semibold text-[var(--text)] mb-1">Just a go/no-go gate</div>
+                      <div className="text-[var(--text-dim)] text-xs mb-3">Single number. Cheapest call. Use only when you've already decided to install.</div>
+                      <code className="block font-mono text-xs text-[var(--accent)] bg-[var(--bg-input)] px-2 py-1 rounded">get_health_score(eco, pkg)</code>
+                      <div className="text-[10px] text-[var(--text-faded)] mt-2">~50 tokens · single integer</div>
+                    </div>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-4 text-sm mt-4">
+                    <div className="rounded-lg border border-[var(--border)] p-4">
+                      <div className="text-xs uppercase tracking-wider text-[var(--text-faded)] mb-2">Multiple packages at once</div>
+                      <code className="block font-mono text-xs text-[var(--accent)] bg-[var(--bg-input)] px-2 py-1 rounded">{"audit_stack([{eco,pkg},...])"}</code>
+                      <div className="text-[10px] text-[var(--text-faded)] mt-2">One call replaces N. Returns prioritized action items.</div>
+                    </div>
+                    <div className="rounded-lg border border-[var(--border)] p-4">
+                      <div className="text-xs uppercase tracking-wider text-[var(--text-faded)] mb-2">A name you don't recognise</div>
+                      <code className="block font-mono text-xs text-[var(--accent)] bg-[var(--bg-input)] px-2 py-1 rounded">package_exists · check_typosquat · check_malicious</code>
+                      <div className="text-[10px] text-[var(--text-faded)] mt-2">Anti-hallucination + supply-chain hygiene before any install.</div>
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
+            </Section>
+
+            {/* DepScope for refactoring — bundle */}
+            <Section title="DepScope for refactoring" description="Three tools that, used in sequence, replace a refactor copilot.">
+              <Card>
+                <CardBody>
+                  <ol className="space-y-4 text-sm">
+                    <li className="flex gap-4">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[var(--accent)]/10 border border-[var(--accent)]/40 flex items-center justify-center text-[var(--accent)] font-mono text-sm">1</div>
+                      <div>
+                        <div className="font-semibold text-[var(--text)]"><code className="font-mono text-xs">resolve_error(error_text)</code> — diagnose</div>
+                        <div className="text-[var(--text-dim)]">Map the stack trace or error message to a verified fix or known-bug entry. Skips Stack Overflow.</div>
+                      </div>
+                    </li>
+                    <li className="flex gap-4">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[var(--accent)]/10 border border-[var(--accent)]/40 flex items-center justify-center text-[var(--accent)] font-mono text-sm">2</div>
+                      <div>
+                        <div className="font-semibold text-[var(--text)]"><code className="font-mono text-xs">get_breaking_changes(eco, pkg, from, to)</code> — plan</div>
+                        <div className="text-[var(--text-dim)]">List the verified breaking changes between two majors (with migration hints) before bumping.</div>
+                      </div>
+                    </li>
+                    <li className="flex gap-4">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[var(--accent)]/10 border border-[var(--accent)]/40 flex items-center justify-center text-[var(--accent)] font-mono text-sm">3</div>
+                      <div>
+                        <div className="font-semibold text-[var(--text)]"><code className="font-mono text-xs">get_migration_path(eco, from_pkg, to_pkg)</code> — execute</div>
+                        <div className="text-[var(--text-dim)]">Curated migration with literal before/after code diffs ready to apply (request → axios, moment → dayjs, urllib2 → requests, flask → fastapi, ...).</div>
+                      </div>
+                    </li>
+                  </ol>
+                  <div className="mt-4 pt-3 border-t border-[var(--border)] text-xs text-[var(--text-faded)]">
+                    No competitor exposes these three steps in this order via a single MCP. Free.
+                  </div>
                 </CardBody>
               </Card>
             </Section>

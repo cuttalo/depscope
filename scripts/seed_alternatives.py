@@ -280,7 +280,7 @@ ALTERNATIVES = [
 
 async def seed():
     import asyncpg
-    db_url = os.environ.get("DATABASE_URL") or "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+    db_url = os.environ.get("DATABASE_URL") or os.environ["DATABASE_URL"]
     conn = await asyncpg.connect(db_url)
 
     added = 0

@@ -1,3 +1,4 @@
+import os
 """Ingest:
 1. OpenSSF Malicious Packages — https://github.com/ossf/malicious-packages (via OSV export)
    Each record is an OSV format with ecosystem/package/version_ranges + malicious flag.
@@ -6,7 +7,7 @@
 import asyncio, asyncpg, aiohttp, json, sys, os, tempfile, zipfile, io
 from datetime import datetime, timezone
 
-DB_URL = "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+DB_URL = os.environ["DATABASE_URL"]
 # OpenSSF publishes malicious packages through OSV's malicious-packages dataset
 OSV_BUCKET_BASE = "https://osv-vulnerabilities.storage.googleapis.com"
 # OpenSSF Malicious is under multiple ecosystem prefixes via OSV. We use the dedicated repo instead:

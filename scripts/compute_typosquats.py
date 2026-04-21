@@ -1,3 +1,4 @@
+import os
 """Compute typosquat candidates: for each popular package, find lookalikes with much less downloads.
 
 Algorithm:
@@ -7,7 +8,7 @@ Algorithm:
 """
 import asyncio, asyncpg
 
-DB = "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+DB = os.environ["DATABASE_URL"]
 TOP_N = 500  # top packages per ecosystem to use as anchors
 
 # Confusable pairs (simplified)

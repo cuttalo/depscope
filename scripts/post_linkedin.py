@@ -1,10 +1,11 @@
+import os
 """Post to LinkedIn via UGC Posts API.
 Usage: python3 post_linkedin.py <content_file.txt>
 """
 import asyncio, asyncpg, aiohttp, sys
 from datetime import datetime, timezone
 
-DB_URL = "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+DB_URL = os.environ["DATABASE_URL"]
 
 
 async def main(content_path: str):

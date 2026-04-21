@@ -1,7 +1,8 @@
+import os
 """Extend publish_security check to ALL npm packages in package_quality (not just top 800)."""
 import asyncio, asyncpg, aiohttp
 
-DB_URL = "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+DB_URL = os.environ["DATABASE_URL"]
 
 async def main():
     conn = await asyncpg.connect(DB_URL)

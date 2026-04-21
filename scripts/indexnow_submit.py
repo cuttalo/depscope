@@ -22,7 +22,7 @@ HOST = "depscope.dev"
 BASE_URL = f"https://{HOST}"
 PUBLIC_DIR = Path("/home/deploy/depscope/frontend/public")
 ENDPOINT = "https://api.indexnow.org/IndexNow"
-DB_URL = os.environ.get("DATABASE_URL") or "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+DB_URL = os.environ.get("DATABASE_URL") or os.environ["DATABASE_URL"]
 
 # SEO quality gates (same thresholds as api/main.py)
 SEO_MIN_BREAKING = 3

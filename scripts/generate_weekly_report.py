@@ -33,7 +33,7 @@ UPDATES_DIR = ROOT / "frontend" / "app" / "updates"
 SITEMAP = ROOT / "frontend" / "app" / "sitemap.ts"
 
 DB_URL = os.environ.get(
-    "DB_URL", "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+    "DB_URL", os.environ["DATABASE_URL"]
 )
 
 # ---------------------------------------------------------------------------

@@ -88,7 +88,7 @@ export default function StatsPage() {
               </div>
               <div className="p-5">
                 <Stat
-                  value={stats.mcp_tools ?? 23}
+                  value={stats.mcp_tools ?? 29}
                   label="MCP tools"
                   color="var(--accent)"
                 />

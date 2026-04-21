@@ -14,7 +14,7 @@ const SNIPPETS: Snippet[] = [
   {
     id: "mcp",
     title: "MCP server (Claude Code / Desktop / Cursor)",
-    blurb: "Install via npm. 23 tools for package intelligence (incl. ai_brief, audit_stack, get_migration_path), zero config.",
+    blurb: "Install via npm. 29 tools for package intelligence (incl. ai_brief, audit_stack, get_migration_path), zero config.",
     lang: "sh",
     code: `# Claude Code (one-liner — local stdio)
 claude mcp add depscope -- npx -y depscope-mcp
@@ -99,7 +99,7 @@ npx -y depscope-cli brief npm/express`,
     title: "Migration paths (deprecated → modern with code diff)",
     blurb: "Curated migrations with literal before/after snippets ready to apply. Call via MCP get_migration_path or REST.",
     lang: "sh",
-    code: `# MCP tool call (23rd tool)
+    code: `# MCP tool call (23 of 26 tools)
 {"name":"get_migration_path","arguments":{"ecosystem":"npm","from_package":"request","to_package":"axios"}}
 
 # REST
@@ -202,6 +202,48 @@ export default function IntegratePage() {
           description="One line in your config. No signup, no API key. Works with every major agent and CI."
           actions={<Badge variant="success">Free · no auth</Badge>}
         />
+
+
+        <Section>
+          <Card>
+            <CardBody>
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-[var(--text-faded)]">Install in 1 click</div>
+                  <div className="text-sm text-[var(--text-dim)] mt-1">No JSON to edit. Click the button for your IDE.</div>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30">29 tools · zero auth</span>
+              </div>
+              <div className="grid md:grid-cols-3 gap-3">
+                <a href="cursor://anysphere.cursor-deeplink/mcp/install?name=depscope&config=eyJ1cmwiOiJodHRwczovL21jcC5kZXBzY29wZS5kZXYvbWNwIn0="
+                   className="rounded border border-[var(--border)] bg-[var(--bg-input)] hover:bg-[var(--bg-hover)] hover:border-[var(--accent)]/40 px-4 py-3 transition flex items-center gap-3">
+                  <svg className="w-5 h-5 text-[var(--accent)]" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18L19.82 8 12 11.82 4.18 8 12 4.18zM4 9.6l7 3.5v7.7l-7-3.5V9.6zm16 0v7.7l-7 3.5v-7.7l7-3.5z"/></svg>
+                  <div>
+                    <div className="font-semibold text-sm text-[var(--text)]">Add to Cursor</div>
+                    <div className="text-[11px] text-[var(--text-faded)]">Opens Cursor &rarr; auto-installs.</div>
+                  </div>
+                </a>
+                <div className="rounded border border-[var(--border)] bg-[var(--bg-input)] px-4 py-3 flex items-center justify-between gap-2">
+                  <div>
+                    <div className="font-semibold text-sm text-[var(--text)]">Claude Code</div>
+                    <div className="text-[11px] text-[var(--text-faded)]">Run this once in any terminal.</div>
+                  </div>
+                  <CopyButton text="claude mcp add depscope --transport http https://mcp.depscope.dev/mcp" />
+                </div>
+                <div className="rounded border border-[var(--border)] bg-[var(--bg-input)] px-4 py-3 flex items-center justify-between gap-2">
+                  <div>
+                    <div className="font-semibold text-sm text-[var(--text)]">VS Code (.vscode/mcp.json)</div>
+                    <div className="text-[11px] text-[var(--text-faded)]">Drop-in workspace config.</div>
+                  </div>
+                  <CopyButton text={'{"servers":{"depscope":{"type":"http","url":"https://mcp.depscope.dev/mcp"}}}'} />
+                </div>
+              </div>
+              <div className="mt-3 text-[11px] text-[var(--text-faded)]">
+                Claude Desktop, Windsurf, Cline, Continue, ChatGPT, Aider &mdash; full snippets below.
+              </div>
+            </CardBody>
+          </Card>
+        </Section>
 
         <div className="space-y-4">
           {SNIPPETS.map((s) => (

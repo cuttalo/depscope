@@ -1,3 +1,4 @@
+import os
 """
 Follow-up for opened-but-not-replied after 72h.
 Run daily via cron. Only sends 1 follow-up per recipient (tracked by campaign='launch_2026_04_20_followup').
@@ -9,9 +10,9 @@ from email.utils import formataddr, make_msgid, formatdate
 from datetime import datetime, timezone
 
 SMTP_USER = "depscope@cuttalo.com"
-SMTP_PASS = "REDACTED_SMTP"
+SMTP_PASS = os.environ.get("SMTP_PASS", "")
 
-DB_URL = "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+DB_URL = os.environ["DATABASE_URL"]
 SMTP_HOST = "mail.cuttalo.com"
 SMTP_PORT = 587
 FROM = "depscope@cuttalo.com"
