@@ -68,7 +68,7 @@ export default function ApiDocsPage() {
                 <dt className="text-[var(--text-dim)]">Format</dt>
                 <dd>JSON (UTF-8)</dd>
                 <dt className="text-[var(--text-dim)]">MCP tools</dt>
-                <dd>23 tools available at <a href="https://mcp.depscope.dev/mcp" className="text-[var(--accent)] hover:underline">mcp.depscope.dev/mcp</a> (remote, zero install)</dd>
+                <dd>29 tools available at <a href="https://mcp.depscope.dev/mcp" className="text-[var(--accent)] hover:underline">mcp.depscope.dev/mcp</a> (remote, zero install)</dd>
               </dl>
             </CardBody>
           </Card>

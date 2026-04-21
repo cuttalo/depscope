@@ -20,7 +20,7 @@ MINOR_ECOSYSTEMS = ["pub", "hex", "swift", "cocoapods", "cpan", "hackage", "cran
 
 async def main():
     import asyncpg
-    db_url = os.environ.get("DATABASE_URL") or "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+    db_url = os.environ.get("DATABASE_URL") or os.environ["DATABASE_URL"]
     conn = await asyncpg.connect(db_url)
 
     since_hours = int(os.environ.get("SINCE_HOURS", "6"))

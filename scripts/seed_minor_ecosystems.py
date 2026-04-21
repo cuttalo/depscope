@@ -343,7 +343,7 @@ async def main():
 
     # Load existing packages
     import asyncpg
-    db_url = os.environ.get("DATABASE_URL") or "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+    db_url = os.environ.get("DATABASE_URL") or os.environ["DATABASE_URL"]
     conn = await asyncpg.connect(db_url)
     rows = await conn.fetch("SELECT ecosystem, name FROM packages")
     processed = {f"{r['ecosystem']}:{r['name']}" for r in rows}

@@ -1,3 +1,4 @@
+import os
 """
 Send outreach campaign with anti-burst throttling + proper markdown rendering.
 Run at 2026-04-20 12:00 UTC via cron.
@@ -9,9 +10,9 @@ from email.utils import formataddr, make_msgid, formatdate
 from datetime import datetime, timezone
 
 SMTP_USER = "depscope@cuttalo.com"
-SMTP_PASS = "REDACTED_SMTP"
+SMTP_PASS = os.environ.get("SMTP_PASS", "")
 
-DB_URL = "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+DB_URL = os.environ["DATABASE_URL"]
 SMTP_HOST = "mail.cuttalo.com"
 SMTP_PORT = 587
 FROM = "depscope@cuttalo.com"

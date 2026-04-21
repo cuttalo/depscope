@@ -7,7 +7,7 @@ import os
 import time
 
 API_BASE = os.environ.get("API_BASE", "http://127.0.0.1:8000")
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://depscope:REDACTED_DB@localhost:5432/depscope")
+DATABASE_URL = os.environ.get("DATABASE_URL", os.environ["DATABASE_URL"])
 CONCURRENCY = 2  # kind to external registries
 
 SOURCES = {

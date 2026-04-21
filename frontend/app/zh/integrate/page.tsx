@@ -4,7 +4,36 @@ export default function ZhIntegratePage() {
       <h1 className="text-4xl font-bold mt-6 mb-2"><span className="gradient-text">集成DepScope</span></h1>
       <p className="text-[var(--text-dim)] mb-8">30秒为您的AI编程助手添加软件包健康检查。无需注册，无需API密钥。</p>
 
-      <div className="space-y-8">
+            <div className="card p-6 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <div className="text-xs uppercase tracking-wider text-[var(--text-faded)]">一键安装</div>
+            <div className="text-sm text-[var(--text-dim)] mt-1">无需手动编辑 JSON — 选择您的 IDE。</div>
+          </div>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30">29 个工具 · 无需认证</span>
+        </div>
+        <div className="grid md:grid-cols-3 gap-3 text-sm">
+          <a href="cursor://anysphere.cursor-deeplink/mcp/install?name=depscope&config=eyJ1cmwiOiJodHRwczovL21jcC5kZXBzY29wZS5kZXYvbWNwIn0="
+             className="rounded border border-[var(--border)] bg-[var(--bg-input)] hover:bg-[var(--bg-hover)] px-4 py-3">
+            <div className="font-semibold text-[var(--text)]">添加到 Cursor</div>
+            <div className="text-[11px] text-[var(--text-faded)]">打开 Cursor 自动安装。</div>
+          </a>
+          <div className="rounded border border-[var(--border)] bg-[var(--bg-input)] px-4 py-3">
+            <div className="font-semibold text-[var(--text)]">Claude Code</div>
+            <div className="text-[11px] text-[var(--text-faded)]">在终端运行一次：</div>
+            <code className="block mt-2 font-mono text-[11px] text-[var(--accent)] break-all">claude mcp add depscope --transport http https://mcp.depscope.dev/mcp</code>
+          </div>
+          <div className="rounded border border-[var(--border)] bg-[var(--bg-input)] px-4 py-3">
+            <div className="font-semibold text-[var(--text)]">VS Code (.vscode/mcp.json)</div>
+            <code className="block mt-2 font-mono text-[11px] text-[var(--accent)] break-all">{`{"servers":{"depscope":{"type":"http","url":"https://mcp.depscope.dev/mcp"}}}`}</code>
+          </div>
+        </div>
+        <div className="mt-3 text-[11px] text-[var(--text-faded)]">
+          Claude Desktop · Windsurf · Cline · Continue.dev · ChatGPT · Aider — 完整代码片段见下方。
+        </div>
+      </div>
+
+<div className="space-y-8">
         {/* DeepSeek */}
         <div className="card p-6">
           <h2 className="text-xl font-bold mb-2">DeepSeek配置</h2>
@@ -109,7 +138,7 @@ npx -y depscope-cli brief npm/express`}</pre>
         <div className="card p-6">
           <h2 className="text-xl font-bold mb-2">迁移路径 (已弃用 → 现代包，含代码差异)</h2>
           <p className="text-sm text-[var(--text-dim)] mb-4">精选迁移路径，提供可直接应用的 before/after 代码片段。通过 MCP get_migration_path 或 REST API 调用。</p>
-          <pre className="bg-[var(--bg)] rounded-lg p-4 text-sm text-[var(--accent)] overflow-x-auto whitespace-pre-wrap">{`# MCP工具调用 (第23个工具)
+          <pre className="bg-[var(--bg)] rounded-lg p-4 text-sm text-[var(--accent)] overflow-x-auto whitespace-pre-wrap">{`# MCP工具调用 (第29个工具)
 {"name":"get_migration_path","arguments":{"ecosystem":"npm","from_package":"request","to_package":"axios"}}
 
 # REST API

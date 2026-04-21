@@ -10,7 +10,7 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timezone, timedelta
 
 SMTP_USER = "depscope@cuttalo.com"
-SMTP_PASS = "REDACTED_SMTP"
+SMTP_PASS = os.environ.get("SMTP_PASS", "")
 
 sys.path.insert(0, "/home/deploy/depscope")
 

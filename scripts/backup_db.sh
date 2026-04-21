@@ -22,7 +22,7 @@ DUMP_FILE="$DUMP_DIR/depscope_${STAMP}.sql.gz"
 echo "[$(date -u +%FT%TZ)] backup_db start"
 
 # 1. pg_dump (custom format would be nicer but plain SQL is robust & inspectable)
-PGPASSWORD=REDACTED_DB pg_dump \
+PGPASSWORD=$PGPASSWORD pg_dump \
   --host=localhost \
   --port=5432 \
   --username=depscope \

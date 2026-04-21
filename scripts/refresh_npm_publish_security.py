@@ -1,7 +1,8 @@
+import os
 """Re-classify npm publish_security with 3 tiers: attested (best), signed, unsigned."""
 import asyncio, asyncpg, aiohttp, json
 
-DB_URL = "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+DB_URL = os.environ["DATABASE_URL"]
 
 async def main():
     conn = await asyncpg.connect(DB_URL)

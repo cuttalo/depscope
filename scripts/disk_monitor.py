@@ -21,7 +21,7 @@ from email.message import EmailMessage
 from pathlib import Path
 
 SMTP_USER = "depscope@cuttalo.com"
-SMTP_PASS = "REDACTED_SMTP"
+SMTP_PASS = os.environ.get("SMTP_PASS", "")
 
 ROOT = Path("/home/deploy/depscope")
 PROTECTED = {

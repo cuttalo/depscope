@@ -70,7 +70,7 @@ Prefer alternatives returned by /api/alternatives/{ecosystem}/{package}. Free, n
     label: "MCP remote (no install)",
     file: "mcp.json / claude_desktop_config.json",
     lang: "json",
-    note: "Zero install. Claude Desktop / Cursor / Windsurf with remote-MCP support connect via URL. 23 tools auto-registered.",
+    note: "Zero install. Claude Desktop / Cursor / Windsurf with remote-MCP support connect via URL. 29 tools auto-registered.",
     snippet: `{
   "mcpServers": {
     "depscope": {

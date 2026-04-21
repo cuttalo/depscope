@@ -1,3 +1,4 @@
+import os
 """Daily ingest: CISA KEV catalog + EPSS scores.
 
 CISA KEV: https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
@@ -6,7 +7,7 @@ EPSS:     https://epss.cyentia.com/epss_scores-current.csv.gz (updated daily)
 import asyncio, asyncpg, aiohttp, csv, gzip, io, sys
 from datetime import datetime, timezone
 
-DB_URL = "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+DB_URL = os.environ["DATABASE_URL"]
 KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 EPSS_URL = "https://epss.cyentia.com/epss_scores-current.csv.gz"
 

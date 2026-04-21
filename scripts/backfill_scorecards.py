@@ -16,7 +16,7 @@ import aiohttp
 import asyncpg
 
 sys.path.insert(0, "/home/deploy/depscope")
-DATABASE_URL = "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 GITHUB_RE = re.compile(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
 

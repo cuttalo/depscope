@@ -508,7 +508,7 @@ export default function ZhHome() {
                 <span className="text-sm font-semibold text-[var(--text)]">MCP 远程 — 无需安装</span>
               </div>
               <p className="text-sm text-[var(--text-dim)] mb-2">
-                Claude Desktop / Cursor / Windsurf（新版本）可以仅通过 URL 连接 — 无需 <code className="text-[var(--accent)] font-mono text-xs">npm install -g</code>。自动注册 23 个工具。
+                Claude Desktop / Cursor / Windsurf（新版本）可以仅通过 URL 连接 — 无需 <code className="text-[var(--accent)] font-mono text-xs">npm install -g</code>。自动注册 29 个工具。
               </p>
               <pre className="bg-[var(--bg-soft)] border border-[var(--border)] rounded p-3 text-xs font-mono overflow-x-auto">{`{ "mcpServers": { "depscope": { "url": "https://mcp.depscope.dev/mcp" } } }`}</pre>
             </div>
@@ -538,7 +538,7 @@ export default function ZhHome() {
               </div>
               <div className="card p-5 text-center">
                 <div className="text-xl md:text-3xl font-bold text-[var(--orange, #f97316)]">
-                  {stats?.mcp_tools ?? 23}
+                  {stats?.mcp_tools ?? 29}
                 </div>
                 <div className="text-xs text-[var(--text-dim)] mt-1">MCP 工具</div>
               </div>

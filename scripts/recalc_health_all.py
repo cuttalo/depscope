@@ -21,7 +21,7 @@ from api.health import calculate_health_score
 
 async def main():
     import asyncpg
-    db_url = os.environ.get("DATABASE_URL") or "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+    db_url = os.environ.get("DATABASE_URL") or os.environ["DATABASE_URL"]
     conn = await asyncpg.connect(db_url)
 
     # Monthly job: default look-back 30 days. Override via env.

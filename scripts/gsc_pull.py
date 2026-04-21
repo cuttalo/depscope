@@ -1,9 +1,10 @@
+import os
 """Daily pull GSC data into DB — feed Launch Tracker."""
 import asyncio, asyncpg, os, requests, sys, json
 from datetime import datetime, date, timedelta, timezone
 from urllib.parse import quote
 
-DB_URL = "postgresql://depscope:REDACTED_DB@localhost:5432/depscope"
+DB_URL = os.environ["DATABASE_URL"]
 CLIENT_ID = os.environ["GSC_CLIENT_ID"]
 CLIENT_SECRET = os.environ["GSC_CLIENT_SECRET"]
 REFRESH_TOKEN = os.environ["GSC_REFRESH_TOKEN"]

@@ -33,7 +33,7 @@ from urllib.parse import quote
 import asyncpg
 
 SMTP_USER = "depscope@cuttalo.com"
-SMTP_PASS = "REDACTED_SMTP"
+SMTP_PASS = os.environ.get("SMTP_PASS", "")
 
 DB_URL = os.getenv("DATABASE_URL", "postgresql://depscope:${DB_PASSWORD}@localhost:5432/depscope")
 
