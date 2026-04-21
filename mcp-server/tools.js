@@ -576,6 +576,84 @@ export const TOOLS = [
       required: ["email", "subject", "body"],
     },
   },
+  {
+    name: "check_bulk",
+    description:
+      "Fast pre-flight check for up to 100 (ecosystem, package) pairs in a single call. DB-only, no registry round-trips — typical latency <100ms for 100 items. Returns per-item status: exists | stdlib | malicious | typosquat_suspect | historical_incident | unknown. CALL THIS FIRST before an agent emits `npm install`/`pip install` on a list — it filters out stdlib modules, hallucinated names, typos, and known bad packages in one shot. Replaces N separate /check calls.",
+    annotations: {
+      title: "check_bulk",
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          maxItems: 100,
+          items: {
+            type: "object",
+            properties: {
+              ecosystem: { type: "string", enum: ECOSYSTEMS },
+              package: { type: "string" },
+            },
+            required: ["ecosystem", "package"],
+          },
+        },
+      },
+      required: ["items"],
+    },
+  },
+  {
+    name: "install_command",
+    description:
+      "Return the canonical install command(s) for a package across every standard package manager of its ecosystem. Prevents agents from hallucinating install syntax (wrong flags, wrong file format). Input: ecosystem + package (+ optional version; defaults to latest). Output: a primary pinned one-liner plus variants for npm/pnpm/yarn/bun, pip/uv/poetry, cargo, go, composer, maven (XML+Gradle), NuGet, RubyGems, pub, hex, SPM, CocoaPods, CPAN, Hackage, CRAN, conda, Homebrew — whichever are applicable.",
+    annotations: {
+      title: "install_command",
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        ecosystem: { type: "string", enum: ECOSYSTEMS },
+        package: { type: "string" },
+        version: { type: "string", description: "Optional explicit version; defaults to latest." },
+      },
+      required: ["ecosystem", "package"],
+    },
+  },
+  {
+    name: "pin_safe",
+    description:
+      "Recommend the highest version of a package whose known CVEs are below the chosen severity tier. Walks the version history newest-first, filtering prereleases by default. Input: ecosystem + package (+ optional min_severity, constraint like ^16.0.0, include_prerelease). Output: recommended_version plus the walk log showing why each version was skipped. Use BEFORE suggesting a version bump or writing a package.json/requirements.txt line.",
+    annotations: {
+      title: "pin_safe",
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        ecosystem: { type: "string", enum: ECOSYSTEMS },
+        package: { type: "string" },
+        min_severity: {
+          type: "string",
+          enum: ["critical", "high", "medium", "low"],
+          description: "Lowest severity to exclude. Default: high (excludes critical+high).",
+        },
+        constraint: {
+          type: "string",
+          description: "npm-style constraint: ^X.Y.Z, ~X.Y.Z, >=X.Y.Z, or exact X.Y.Z.",
+        },
+        include_prerelease: { type: "boolean", default: false },
+      },
+      required: ["ecosystem", "package"],
+    },
+  },
 ];
 
 function headers() {
@@ -756,6 +834,22 @@ export async function handleToolCall(name, args) {
         return ok(await getJson(`/api/quality/${args.ecosystem}/${args.package}`));
       case "get_provenance":
         return ok(await getJson(`/api/provenance/${args.ecosystem}/${args.package}`));
+      case "check_bulk":
+        return ok(await postJson(`/api/check_bulk`, { items: args.items || [] }));
+      case "install_command": {
+        const qs = new URLSearchParams();
+        if (args.version) qs.set("version", args.version);
+        const q = qs.toString();
+        return ok(await getJson(`/api/install/${args.ecosystem}/${args.package}${q ? "?" + q : ""}`));
+      }
+      case "pin_safe": {
+        const qs = new URLSearchParams();
+        if (args.min_severity) qs.set("min_severity", args.min_severity);
+        if (args.constraint) qs.set("constraint", args.constraint);
+        if (args.include_prerelease) qs.set("include_prerelease", "true");
+        const q = qs.toString();
+        return ok(await getJson(`/api/pin_safe/${args.ecosystem}/${args.package}${q ? "?" + q : ""}`));
+      }
       default:
         return fail(`Unknown tool: ${name}`);
     }

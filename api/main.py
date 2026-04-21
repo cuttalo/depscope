@@ -28,6 +28,7 @@ from api.registries import fetch_package, fetch_vulnerabilities, save_package_to
 from api.health import calculate_health_score
 from api.historical_compromises import lookup as lookup_historical
 from api.stdlib_modules import lookup as lookup_stdlib
+from api.verticals_v2 import router as verticals_v2_router
 from api.auth import router as auth_router, _get_user_from_request
 from api.payments import router as payments_router
 from api.mcp_http import mcp_router
@@ -49,7 +50,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="DepScope",
-    description="Package Intelligence API for AI Agents. Free, open, no auth required. 22,000+ packages across 17 ecosystems (npm, PyPI, Cargo, Go, Maven, NuGet, RubyGems, Composer, Pub, Hex, Swift, CocoaPods, CPAN, Hackage, CRAN, Conda, Homebrew). 402 vulnerabilities tracked. 23 MCP tools (remote transport available at https://mcp.depscope.dev/mcp). Three verticals on one shared infrastructure: package health, error -> fix database, and stack compatibility matrix. Save tokens, save energy, ship safer code.",
+    description="Package Intelligence API for AI Agents. Free, open, no auth required. 22,000+ packages across 17 ecosystems (npm, PyPI, Cargo, Go, Maven, NuGet, RubyGems, Composer, Pub, Hex, Swift, CocoaPods, CPAN, Hackage, CRAN, Conda, Homebrew). 402 vulnerabilities tracked. 26 MCP tools (remote transport available at https://mcp.depscope.dev/mcp). Three verticals on one shared infrastructure: package health, error -> fix database, and stack compatibility matrix. Save tokens, save energy, ship safer code.",
     version=VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -67,6 +68,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(payments_router)
 app.include_router(mcp_router)
+app.include_router(verticals_v2_router)
 
 
 @app.middleware("http")
@@ -98,6 +100,89 @@ async def rate_limit_middleware(request: Request, call_next):
     response = await call_next(request)
     return response
 
+
+
+
+# ----------------------------------------------------------------------------
+# Curated "legacy_but_working" packages: still installable, no registry-level
+# deprecation, but the maintainers themselves declared maintenance mode and
+# new projects are recommended to migrate. Surface this between safe_to_use
+# and find_alternative so agents know to flag the choice without blocking.
+# ----------------------------------------------------------------------------
+_LEGACY_PACKAGES = {
+    ("npm", "moment"): {
+        "reason": "Project officially in maintenance mode since 2020 (project status page).",
+        "alternatives": ["dayjs", "date-fns", "luxon"],
+    },
+    ("npm", "request"): {
+        "reason": "Deprecated by maintainer (Feb 2020) — kept here for legacy projects.",
+        "alternatives": ["axios", "got", "node-fetch", "undici"],
+    },
+    ("npm", "node-sass"): {
+        "reason": "Deprecated, sunset Oct 2024 (Node-Sass project).",
+        "alternatives": ["sass"],
+    },
+    ("npm", "babel-eslint"): {
+        "reason": "Renamed to @babel/eslint-parser; this package is unmaintained.",
+        "alternatives": ["@babel/eslint-parser"],
+    },
+    ("npm", "true"): {
+        "reason": "Joke / null-package, not a real dependency.",
+        "alternatives": [],
+    },
+    ("npm", "querystring"): {
+        "reason": "Legacy module; URLSearchParams is the web standard built into Node 18+.",
+        "alternatives": ["URLSearchParams (built-in)"],
+    },
+    ("pypi", "urllib2"): {
+        "reason": "Python 2 only; in Python 3 use requests or httpx.",
+        "alternatives": ["requests", "httpx"],
+    },
+    ("pypi", "imp"): {
+        "reason": "Removed in Python 3.12; use importlib.",
+        "alternatives": ["importlib"],
+    },
+    ("pypi", "pycrypto"): {
+        "reason": "Unmaintained since 2014; security risk.",
+        "alternatives": ["cryptography", "pycryptodome"],
+    },
+    ("rubygems", "json_pure"): {
+        "reason": "Superseded by json (in stdlib).",
+        "alternatives": ["json"],
+    },
+}
+
+
+def _apply_legacy_status(payload: dict) -> dict:
+    """If package is in our curated legacy list and not already flagged
+    deprecated/malicious, override recommendation.action to legacy_but_working."""
+    if not isinstance(payload, dict):
+        return payload
+    eco = (payload.get("ecosystem") or "").lower()
+    pkg = (payload.get("package") or "").lower()
+    key = (eco, pkg)
+    if key not in _LEGACY_PACKAGES:
+        return payload
+    info = _LEGACY_PACKAGES[key]
+    health = payload.get("health") or {}
+    # Don't override if already in stronger states
+    rec = payload.get("recommendation") or {}
+    current = rec.get("action", "")
+    if current in ("do_not_use",):
+        return payload
+    # Mark as legacy_but_working
+    payload.setdefault("recommendation", {})
+    payload["recommendation"]["action"] = "legacy_but_working"
+    payload["recommendation"]["summary"] = (
+        f"Still installable, but maintainers declared maintenance-mode. {info['reason']} "
+        f"For new projects prefer: {', '.join(info['alternatives']) or 'a modern equivalent'}."
+    )
+    payload["recommendation"]["legacy_hint"] = info["reason"]
+    payload["recommendation"]["suggested_alternatives"] = info["alternatives"]
+    # Surface also in health.deprecated as a soft signal (not registry-level)
+    payload.setdefault("health", {})
+    payload["health"]["legacy_but_working"] = True
+    return payload
 
 
 async def _augment_check(conn, ecosystem, package, payload):
@@ -186,6 +271,8 @@ async def _augment_check(conn, ecosystem, package, payload):
             }
     else:
         payload["malicious"] = {"is_malicious": False}
+    # Apply legacy_but_working override (after malicious check so we don't override do_not_use)
+    payload = _apply_legacy_status(payload)
     # 5) OSS Scorecard summary
     m_repo = await conn.fetchrow(
         "SELECT repo_owner, repo_name FROM maintainer_signals WHERE ecosystem=$1 AND package_name=$2",
@@ -775,6 +862,11 @@ async def ai_stack(body: _StackRequest, request: Request = None):
             action_items.append(f"REVIEW: {name} has {v_count} CVE(s) (not actively exploited)")
         elif score < 40:
             action_items.append(f"RECONSIDER: {name} low health {score}/100")
+            risk_count += 1
+        elif (r.get("recommendation") or {}).get("action") == "legacy_but_working":
+            alts = (r.get("recommendation") or {}).get("suggested_alternatives") or []
+            alt_str = ", ".join(alts[:3]) or "no direct alternatives listed"
+            action_items.append(f"REVIEW (legacy): {name} is in maintenance mode \u2192 for new code prefer: {alt_str}")
             risk_count += 1
         else:
             ok_count += 1
@@ -2161,10 +2253,36 @@ async def compare_packages(ecosystem: str, packages_csv: str, request: Request =
     valid.sort(key=lambda x: x["health_score"], reverse=True)
     winner = valid[0]["package"] if valid else None
 
+    # Compute caveats so the winner is NOT blind to trade-offs.
+    # An agent reading only "winner" must still see the structural risks.
+    caveats: dict[str, list[str]] = {}
+    if valid:
+        max_dl = max(p.get("downloads_weekly", 0) for p in valid) or 1
+        max_deps = max(p.get("dependencies_count", 0) for p in valid)
+        for p in valid:
+            issues: list[str] = []
+            if p.get("deprecated"):
+                issues.append("deprecated_in_registry")
+            if p.get("maintainers_count", 0) <= 1:
+                issues.append("bus_factor_le_1 (single declared maintainer)")
+            dl = p.get("downloads_weekly", 0) or 0
+            if dl < max_dl / 10:
+                issues.append(f"low_relative_adoption ({dl:,} vs winner's downloads)")
+            if max_deps and p.get("dependencies_count", 0) > max(2 * max_deps // 3, 5) and p["package"] != winner:
+                issues.append(f"higher_transitive_deps ({p['dependencies_count']})")
+            if p.get("vulns_critical", 0) > 0 or p.get("vulns_high", 0) > 0:
+                issues.append(f"open_high_critical_vulns ({p.get('vulns_critical',0)}+{p.get('vulns_high',0)})")
+            if p.get("vulnerabilities_count", 0) > 0 and "open_high_critical_vulns" not in str(issues):
+                issues.append(f"open_vulns ({p['vulnerabilities_count']})")
+            if issues:
+                caveats[p["package"]] = issues
+
     compare_result = {
         "ecosystem": ecosystem,
         "compared": len(packages),
         "winner": winner,
+        "winner_criterion": "health_score (numeric, 0-100). Trade-offs not captured by the score are listed under `caveats[winner]` and `caveats[<other>]`. Always read both fields before recommending.",
+        "caveats": caveats,
         "packages": packages,
         "_response_ms": int((time.time() - start) * 1000),
     }
@@ -2372,7 +2490,7 @@ async def get_stats():
         "ecosystem_counts": eco_counts,
         "version": VERSION,
         "pricing": "free",
-        "mcp_tools": 23,
+        "mcp_tools": 26,
     }
 
 
@@ -2433,7 +2551,7 @@ async def ai_plugin():
         "schema_version": "v1",
         "name_for_human": "DepScope",
         "name_for_model": "depscope",
-        "description_for_human": "Check package health, vulnerabilities, error fixes and stack compatibility before installing. 17 ecosystems, 23 MCP tools (zero-install remote MCP), 100% free.",
+        "description_for_human": "Check package health, vulnerabilities, error fixes and stack compatibility before installing. 17 ecosystems, 26 MCP tools (zero-install remote MCP), 100% free.",
         "description_for_model": "Use DepScope to check if a software package is safe, maintained, and up-to-date before suggesting it to install. Supports 17 ecosystems: npm, pypi, cargo, go, composer, maven, nuget, rubygems, pub, hex, swift, cocoapods, cpan, hackage, cran, conda, homebrew. 14,700+ packages indexed, 402 vulnerabilities tracked. Three verticals on one API: (1) package health via GET /api/check/{ecosystem}/{package} for full health report with vulns+score+recommendation, GET /api/prompt/{ecosystem}/{package} for LLM-optimized plain text (saves ~74% tokens), GET /api/compare/{ecosystem}/pkg1,pkg2 to compare, GET /api/alternatives/{ecosystem}/{package} for replacements, POST /api/scan to audit dependency lists. (2) error -> fix resolution via POST /api/error/resolve with a stack trace, GET /api/error?code=X for lookups. (3) stack compatibility via GET /api/compat?packages=next@16,react@19 to verify a combo before upgrading. Also GET /api/bugs/{ecosystem}/{package} for non-CVE known bugs per version. No authentication required for public endpoints. Optional API keys for higher limits. Completely free.",
         "auth": {"type": "none"},
         "api": {"type": "openapi", "url": "https://depscope.dev/openapi.json"},
