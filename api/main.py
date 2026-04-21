@@ -2181,6 +2181,24 @@ async def scan_dependencies(request: Request):
     tasks = [_fetch_full_package(ecosystem, name) for name in names]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
+    # Bug 4a fix: _fetch_full_package has a 3s per-subtask timeout.
+    # Under parallel load of 20+ packages, the registry can flake on a
+    # handful of them. Retry None/exception results sequentially once
+    # before declaring not_found — avoids false negatives on e.g.
+    # `chart.js` or `tsx` that are perfectly valid.
+    retry_indexes = [
+        i for i, r in enumerate(results)
+        if isinstance(r, Exception) or r is None
+    ]
+    if retry_indexes:
+        for i in retry_indexes:
+            try:
+                retry = await _fetch_full_package(ecosystem, names[i])
+            except Exception:
+                retry = None
+            if retry is not None:
+                results[i] = retry
+
     audit = []
     total_vulns = 0
     total_critical = 0

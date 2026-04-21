@@ -466,7 +466,7 @@ async def fetch_maven(name: str) -> dict | None:
         "license": pom_meta["license"],
         "homepage": pom_meta["homepage"] or f"https://search.maven.org/artifact/{group_id}/{artifact_id}",
         "repository": pom_meta["repository"],
-        "downloads_weekly": 0,
+        "downloads_weekly": None,  # Maven Central does not expose download counts.
         "maintainers_count": 0,
         "deprecated": False,
         "deprecated_message": None,
@@ -953,12 +953,12 @@ async def fetch_swift(name: str) -> dict | None:
     return {
         "ecosystem": "swift",
         "name": name,
-        "latest_version": latest_version,
+        "latest_version": latest_version or None,
         "description": repo.get("description", ""),
         "license": repo.get("license", {}).get("spdx_id", "") if isinstance(repo.get("license"), dict) else "",
         "homepage": repo.get("homepage", "") or repo_url,
         "repository": repo_url,
-        "downloads_weekly": 0,
+        "downloads_weekly": None,  # Swift/SPM has no central download metric.
         "maintainers_count": 1,
         "deprecated": repo.get("archived", False),
         "deprecated_message": "Archived" if repo.get("archived") else None,
