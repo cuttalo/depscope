@@ -416,7 +416,7 @@ async def _fetch_full_package(ecosystem: str, package: str) -> dict | None:
         except (asyncio.TimeoutError, Exception):
             return None
 
-    registry_task = asyncio.create_task(_with_timeout(fetch_package(ecosystem, package), 3.0))
+    registry_task = asyncio.create_task(_with_timeout(fetch_package(ecosystem, package), 5.0))
     osv_task = asyncio.create_task(_with_timeout(fetch_vulnerabilities(ecosystem, package, latest_version=None), 3.0))
     bundle_task = None
     ts_task = None
