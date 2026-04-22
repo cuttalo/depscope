@@ -1087,7 +1087,8 @@ async def check_package(ecosystem: str, package: str, version: str = None, reque
             result = await _augment_check(conn, ecosystem, package, result)
     except Exception:
         pass
-    await cache_set(cache_key, result, ttl=3600)
+    # 6h TTL — metadata stable day-to-day; daily cron refreshes downloads/vulns.
+    await cache_set(cache_key, result, ttl=21600)
     _log_usage(ecosystem, package, request,
                response_time_ms=result["_response_ms"], cache_hit=False,
                status_code=200, endpoint="check")
@@ -1440,7 +1441,7 @@ async def get_prompt(ecosystem: str, package: str, request: Request = None):
         pass
 
     text = _build_prompt_text(result, cache_age_minutes=None)
-    await cache_set(cache_key, {"text": text, "ts": time.time()}, ttl=3600)
+    await cache_set(cache_key, {"text": text, "ts": time.time()}, ttl=21600)  # 6h
     rt_ms = int((time.time() - start) * 1000)
     _log_usage(ecosystem, package, request, response_time_ms=rt_ms,
                cache_hit=False, status_code=200, endpoint="prompt")
@@ -2990,13 +2991,15 @@ def _log_usage(ecosystem: str, package: str, request: Request = None,
             country_val = country if country and len(country) == 2 and country.isalpha() else None
             async with pool.acquire() as conn:
                 try:
+                    # Extract mcp_tool from source="mcp:<tool>" for dedicated column
+                    mcp_tool_val = source[4:] if source.startswith("mcp:") else None
                     await conn.execute(
                         """INSERT INTO api_usage
                            (endpoint, ecosystem, package_name, ip_address, user_agent, source,
-                            country, response_time_ms, cache_hit, session_id, status_code, api_key_id)
-                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)""",
+                            country, response_time_ms, cache_hit, session_id, status_code, api_key_id, mcp_tool)
+                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)""",
                         ep, ecosystem, package, ip, ua[:500], source,
-                        country_val, response_time_ms, cache_hit, session_id, status_code, api_key_id,
+                        country_val, response_time_ms, cache_hit, session_id, status_code, api_key_id, mcp_tool_val,
                     )
                 except Exception:
                     # Fallback su schema vecchio
