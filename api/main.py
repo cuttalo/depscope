@@ -57,14 +57,83 @@ async def lifespan(app: FastAPI):
     await close_pool()
 
 
+TAGS_METADATA = [
+    {"name": "packages", "description": (
+        "Core package intelligence: health score, vulnerabilities, recommendations, "
+        "alternatives, comparisons, batch scan, version metadata, dependency tree. "
+        "These are the endpoints AI agents call before suggesting any `npm install` / "
+        "`pip install` / `cargo add`."
+    )},
+    {"name": "errors", "description": (
+        "Error -> fix database. POST a stack trace, get solutions back. "
+        "Full-text error search by message or stable hash."
+    )},
+    {"name": "compat", "description": (
+        "Stack compatibility matrix. Verify a set of `pkg@version` pins work "
+        "together (e.g. `next@16,react@19,prisma@6`) before upgrading."
+    )},
+    {"name": "discover", "description": (
+        "Trending packages per ecosystem, typosquats, malicious advisories, "
+        "trust signals. Use these to surface or avoid packages."
+    )},
+    {"name": "verticals", "description": (
+        "Breaking changes (v1->v2 with migration hints) and non-CVE known bugs per version."
+    )},
+    {"name": "discovery", "description": (
+        "Well-known files for AI agents: /openapi.json, /ai-plugin.json, /mcp.json, "
+        "/llms.txt, /llms-full.txt, /security.txt, /sitemap.xml, /robots.txt."
+    )},
+    {"name": "auth", "description": (
+        "Optional API keys for higher rate limits + usage analytics. No auth "
+        "required for public endpoints."
+    )},
+]
+
+
 app = FastAPI(
-    title="DepScope",
-    description="Package Intelligence API for AI Agents. Free, open, no auth required. 30,000+ packages across 17 ecosystems (npm, PyPI, Cargo, Go, Maven, NuGet, RubyGems, Composer, Pub, Hex, Swift, CocoaPods, CPAN, Hackage, CRAN, Conda, Homebrew). ~2,200 vulnerabilities tracked. MCP server (remote transport available at https://mcp.depscope.dev/mcp). Three verticals on one shared infrastructure: package health, error -> fix database, and stack compatibility matrix. Save tokens, save energy, ship safer code.",
+    title="DepScope — Package Intelligence API",
+    summary="Free, open API that tells AI agents if a package is safe, maintained, and up-to-date before they suggest installing it.",
+    description=(
+        "# DepScope\n\n"
+        "Package Intelligence for AI coding agents. **31,000+ packages** across **17 "
+        "ecosystems** (npm, PyPI, Cargo, Go, Maven, NuGet, RubyGems, Composer, Pub, "
+        "Hex, Swift, CocoaPods, CPAN, Hackage, CRAN, Conda, Homebrew), **2,200+ CVEs** "
+        "enriched with CISA KEV + EPSS. Three verticals on one shared infrastructure:\n\n"
+        "1. **Package health** — /api/check for full report, /api/prompt for LLM-"
+        "optimized text (~74% smaller), /api/alternatives for replacements, /api/scan "
+        "to audit a lockfile.\n"
+        "2. **Error -> fix database** — POST a stack trace to /api/error/resolve.\n"
+        "3. **Stack compatibility matrix** — /api/compat?stack=next@16,react@19.\n\n"
+        "## Quick start (for agents)\n\n"
+        "    curl https://depscope.dev/api/prompt/npm/react\n\n"
+        "## MCP server\n\n"
+        "Zero-install remote URL: `https://mcp.depscope.dev/mcp`. 22 tools. Install "
+        "in one line: `claude mcp add depscope https://mcp.depscope.dev/mcp`.\n\n"
+        "## Rate limits\n\n"
+        "100 req/min anonymous, 200/min for whitelisted AI UAs (ClaudeBot, GPTBot, "
+        "Cursor, MCP-Client, …). Optional API keys for higher limits.\n\n"
+        "Save tokens, save energy, ship safer code."
+    ),
     version=VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
-    servers=[{"url": "https://depscope.dev", "description": "Production"}],
+    servers=[
+        {"url": "https://depscope.dev", "description": "Production"},
+        {"url": "https://stage.depscope.dev", "description": "Staging"},
+    ],
+    contact={
+        "name": "DepScope support",
+        "email": "depscope@cuttalo.com",
+        "url": "https://depscope.dev",
+    },
+    license_info={
+        "name": "MIT",
+        "identifier": "MIT",
+        "url": "https://github.com/cuttalo/depscope/blob/main/LICENSE",
+    },
+    terms_of_service="https://depscope.dev/terms",
+    openapi_tags=TAGS_METADATA,
 )
 
 app.add_middleware(

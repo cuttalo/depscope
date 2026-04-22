@@ -39,7 +39,7 @@ CACHE_TTL_PACKAGE = 3600       # 1 hour
 CACHE_TTL_VULN = 21600         # 6 hours
 CACHE_TTL_HEALTH = 86400       # 24 hours
 
-VERSION = "0.2.0"
+VERSION = "0.7.0"
 
 # Privacy: salt per pseudonimizzare IP nelle analytics
 IP_HASH_SALT = os.getenv("DEPSCOPE_IP_HASH_SALT", "depscope-intel-salt-2026-rotate-me-periodically")
