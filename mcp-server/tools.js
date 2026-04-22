@@ -643,7 +643,10 @@ export async function handleToolCall(name, args) {
       case "package_exists":
         return ok(await gJ(`/api/exists/${args.ecosystem}/${encodePkg(args.package)}`));
       case "compare_packages": {
-        const csv = args.packages.map(encodeURIComponent).join(",");
+        let pkgs = args.packages;
+        if (typeof pkgs === "string") pkgs = pkgs.split(",").map(x => x.trim()).filter(Boolean);
+        if (!Array.isArray(pkgs)) return fail("packages must be array or comma-separated string");
+        const csv = pkgs.map(encodeURIComponent).join(",");
         return ok(await gJ(`/api/compare/${args.ecosystem}/${csv}`));
       }
 
