@@ -908,8 +908,18 @@ async def fetch_hex(name: str) -> dict | None:
         "latest_version": latest_version,
         "description": meta.get("description", ""),
         "license": (meta.get("licenses") or [""])[0] if isinstance(meta.get("licenses"), list) else "",
-        "homepage": links.get("Homepage", "") or links.get("homepage", ""),
-        "repository": links.get("GitHub", "") or links.get("github", "") or links.get("Repository", ""),
+        "homepage": (
+            links.get("Homepage") or links.get("homepage")
+            or links.get("Website") or links.get("website")
+            or links.get("Docs") or links.get("docs")
+            or (next(iter(links.values())) if links else "")
+        ),
+        "repository": (
+            links.get("GitHub") or links.get("github") or links.get("Github")
+            or links.get("Source") or links.get("source")
+            or links.get("Repository") or links.get("repository")
+            or ""
+        ),
         "downloads_weekly": downloads_weekly,
         "maintainers_count": len(data.get("owners", [])),
         "deprecated": bool(data.get("retirements")),
@@ -1256,10 +1266,17 @@ async def fetch_cran(name: str) -> dict | None:
     if long_desc and len(title) < 80:
         description = f"{title}. {long_desc[:300]}" if title else long_desc[:400]
 
-    # URL field may contain "https://... , https://..." — take first
-    url_field = (data.get("URL") or "").split(",")[0].strip() if data.get("URL") else ""
-    homepage = url_field or f"https://cran.r-project.org/package={name}"
-    repository = url_field if "github.com" in url_field.lower() else ""
+    # URL field may contain "https://... , https://..." — scan all URLs.
+    import re as _re
+    raw_urls = _re.split(r"[,\s]+", (data.get("URL") or ""))
+    all_urls = [u.strip().strip("<>") for u in raw_urls if u.strip().startswith("http")]
+    repo_url = next(
+        (u for u in all_urls if any(h in u.lower() for h in ("github.com", "gitlab.com", "bitbucket.org"))),
+        "",
+    )
+    non_repo_url = next((u for u in all_urls if u != repo_url), "")
+    homepage = non_repo_url or (all_urls[0] if all_urls else "") or f"https://cran.r-project.org/package={name}"
+    repository = repo_url or f"https://CRAN.R-project.org/package={name}"
 
     # Downloads: cranlogs.r-pkg.org/downloads/total/last-week/{name}
     downloads_weekly = 0
