@@ -110,6 +110,45 @@ async def rate_limit_middleware(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def universal_usage_logging(request: Request, call_next):
+    """Universal api_usage coverage: logs every /api/* request that wasn't
+    already logged explicitly by the handler via _log_usage(). Skips docs,
+    meta, health, /api/admin/* (admin has its own analytics via pageviews),
+    and auth endpoints. Fully no-op on any failure (DB down etc.) to avoid
+    impacting the response path."""
+    response = await call_next(request)
+    try:
+        path = request.url.path or ""
+        # Skip non-API paths (docs, openapi, redoc, well-known, health, root)
+        if not path.startswith("/api/"):
+            return response
+        # Skip admin (own tracking), auth (login flows), MCP transport meta
+        if path.startswith("/api/admin/") or path.startswith("/api/auth/"):
+            return response
+        # Skip if the handler already called _log_usage()
+        if getattr(request.state, "usage_logged", False):
+            return response
+        # Attempt to extract ecosystem/package from path_params (best effort)
+        ecosystem = ""
+        package = ""
+        try:
+            pp = getattr(request, "path_params", {}) or {}
+            ecosystem = str(pp.get("ecosystem", "") or "")[:32]
+            package = str(pp.get("package", "") or pp.get("package_name", "") or "")[:200]
+        except Exception:
+            pass
+        _log_usage(
+            ecosystem, package, request,
+            response_time_ms=None, cache_hit=False,
+            status_code=getattr(response, "status_code", 200),
+        )
+    except Exception:
+        # NEVER let usage logging break the response
+        pass
+    return response
+
+
 
 
 # ----------------------------------------------------------------------------
@@ -1345,7 +1384,11 @@ async def get_prompt(ecosystem: str, package: str, request: Request = None):
 
 @app.get("/api/health/{ecosystem}/{package:path}", tags=["packages"])
 async def get_health(ecosystem: str, package: str):
-    """Quick health score."""
+    """Health score (0-100) + breakdown only — cheaper than /api/check.
+
+    Runs the same scoring logic as /api/check but returns just the score object
+    (no alternatives, no recommendation narrative). Useful for badges/dashboards.
+    """
     ecosystem = ecosystem.lower()
     cache_key = f"health:{ecosystem}:{package}"
     cached = await cache_get(cache_key)
@@ -1475,7 +1518,13 @@ LICENSE_ADVICE = {
 
 @app.get("/api/malicious/{ecosystem}/{package:path}", tags=["packages"])
 async def check_malicious(ecosystem: str, package: str):
-    """Is this package flagged as malicious by OpenSSF / OSV?"""
+    """Is this package flagged as malicious by OpenSSF / OSV?
+
+    Dedicated fast-path for security gates (CI/CD pre-install hooks). Returns
+    `is_malicious` + advisory id + historical-compromise hint when applicable.
+    Mainstream packages with >100k weekly downloads are heuristically flagged as
+    likely false-positives in the response (action=review_advisory).
+    """
     ecosystem = ecosystem.lower()
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -1633,6 +1682,13 @@ async def get_quality(ecosystem: str, package: str):
 
 @app.get("/api/license/{ecosystem}/{package:path}", tags=["packages"])
 async def get_license(ecosystem: str, package: str):
+    """SPDX license of a single package + commercial-safety classification.
+
+    Returns: `license` (SPDX), `class` (permissive / weak_copyleft / strong_copyleft / proprietary / unknown),
+    plus `commercial_safe` and `copyleft` booleans. Cheap lookup on `packages.license` column.
+
+    For transitive-tree license aggregation, use /api/licenses (plural).
+    """
     ecosystem = ecosystem.lower()
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -1755,7 +1811,11 @@ async def get_vulns(ecosystem: str, package: str):
 
 @app.get("/api/versions/{ecosystem}/{package:path}", tags=["packages"])
 async def get_versions(ecosystem: str, package: str):
-    """Version info."""
+    """Version metadata for a package: latest + total count + recent list + deprecated flag.
+
+    Heavier than /api/latest (which returns only the latest string). Use this when you
+    need the version history preview or total-versions count.
+    """
     ecosystem = ecosystem.lower()
     pkg_data = await fetch_package(ecosystem, package)
     if not pkg_data:
@@ -2759,6 +2819,14 @@ async def _resolve_api_key_id(request: Request):
 def _log_usage(ecosystem: str, package: str, request: Request = None,
                response_time_ms: int = None, cache_hit: bool = False,
                status_code: int = 200, endpoint: str = None):
+    # Mark that usage has been logged for this request so the universal
+    # middleware skips a duplicate insert. Safe no-op if request.state
+    # is not available (e.g. synthetic calls).
+    if request is not None:
+        try:
+            request.state.usage_logged = True
+        except Exception:
+            pass
     async def _log():
         try:
             pool = await get_pool()
@@ -2768,6 +2836,18 @@ def _log_usage(ecosystem: str, package: str, request: Request = None,
                 ip = request.headers.get("CF-Connecting-IP", request.client.host if request.client else "")
                 ua = request.headers.get("User-Agent", "")
                 source = _detect_source(request)
+                # MCP tool attribution: if the MCP dispatcher forwarded the
+                # tool name via X-MCP-Tool header, enrich source as
+                # "mcp:<tool_name>" so admin queries can measure adoption
+                # per-tool. Back-compat: no header -> source stays "mcp".
+                try:
+                    mcp_tool = (request.headers.get("X-MCP-Tool", "") or "").strip()
+                    if mcp_tool:
+                        safe_tool = "".join(c for c in mcp_tool if c.isalnum() or c in ("_", "-"))[:64]
+                        if safe_tool:
+                            source = f"mcp:{safe_tool}"
+                except Exception:
+                    pass
                 country = (request.headers.get("CF-IPCountry", "") or "")[:2].upper()
                 # Override endpoint from path if not explicitly passed
                 if endpoint is None:
