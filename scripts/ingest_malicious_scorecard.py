@@ -98,7 +98,10 @@ async def ingest_malicious_per_eco(conn, session):
                 entry = json.loads(zf.read(name))
             except Exception:
                 continue
-            if not (entry.get("id", "").startswith("MAL-") or "malicious" in (entry.get("summary","").lower())):
+            # Only canonical OpenSSF malicious-packages entries (MAL-*).
+            # Keyword match on "malicious" in summary caused massive false positives
+            # (e.g., "vulnerable to X via malicious URL" on mainstream packages).
+            if not entry.get("id", "").startswith("MAL-"):
                 continue
             if entry.get("withdrawn"):
                 continue

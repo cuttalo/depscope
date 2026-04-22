@@ -1835,6 +1835,12 @@ async def search_error(q: str, limit: int = 5):
         results = await search_errors(q, limit)
     except Exception as e:
         raise HTTPException(500, f"Error search failed: {e}")
+    # Trim full_message in the list response to keep payloads small.
+    # Clients that want the full body call /api/error/{hash}.
+    for r in (results or []):
+        fm = r.get("full_message") or ""
+        if len(fm) > 200:
+            r["full_message"] = fm[:200] + "..."
     payload = {"query": q, "matches": results, "total": len(results), "_cache": "miss"}
     await cache_set(cache_key, payload, ttl=86400)  # 24h
     return payload
@@ -2420,14 +2426,23 @@ async def scan_dependencies(request: Request):
 
 
 _ECO_META = {
-    "npm": {"label": "npm (JavaScript/TypeScript)", "language": "JavaScript", "registry_url": "https://registry.npmjs.org"},
-    "pypi": {"label": "PyPI (Python)", "language": "Python", "registry_url": "https://pypi.org"},
-    "cargo": {"label": "crates.io (Rust)", "language": "Rust", "registry_url": "https://crates.io"},
-    "go": {"label": "Go Modules", "language": "Go", "registry_url": "https://proxy.golang.org"},
-    "composer": {"label": "Packagist (PHP)", "language": "PHP", "registry_url": "https://packagist.org"},
-    "maven": {"label": "Maven Central (Java)", "language": "Java", "registry_url": "https://search.maven.org"},
-    "nuget": {"label": "NuGet (.NET)", "language": "C#/.NET", "registry_url": "https://www.nuget.org"},
-    "rubygems": {"label": "RubyGems (Ruby)", "language": "Ruby", "registry_url": "https://rubygems.org"},
+    "npm":       {"label": "npm (JavaScript/TypeScript)", "language": "JavaScript", "registry_url": "https://registry.npmjs.org"},
+    "pypi":      {"label": "PyPI (Python)",               "language": "Python",     "registry_url": "https://pypi.org"},
+    "cargo":     {"label": "crates.io (Rust)",            "language": "Rust",       "registry_url": "https://crates.io"},
+    "go":        {"label": "Go Modules",                  "language": "Go",         "registry_url": "https://proxy.golang.org"},
+    "composer":  {"label": "Packagist (PHP)",             "language": "PHP",        "registry_url": "https://packagist.org"},
+    "maven":     {"label": "Maven Central (Java)",        "language": "Java",       "registry_url": "https://search.maven.org"},
+    "nuget":     {"label": "NuGet (.NET)",                "language": "C#/.NET",    "registry_url": "https://www.nuget.org"},
+    "rubygems":  {"label": "RubyGems (Ruby)",             "language": "Ruby",       "registry_url": "https://rubygems.org"},
+    "pub":       {"label": "pub.dev (Dart/Flutter)",      "language": "Dart",       "registry_url": "https://pub.dev"},
+    "hex":       {"label": "Hex (Elixir/Erlang)",         "language": "Elixir",     "registry_url": "https://hex.pm"},
+    "swift":     {"label": "Swift Package Manager",       "language": "Swift",      "registry_url": "https://swiftpackageindex.com"},
+    "cocoapods": {"label": "CocoaPods (iOS/macOS)",       "language": "Objective-C/Swift", "registry_url": "https://cocoapods.org"},
+    "cpan":      {"label": "CPAN (Perl)",                 "language": "Perl",       "registry_url": "https://metacpan.org"},
+    "hackage":   {"label": "Hackage (Haskell)",           "language": "Haskell",    "registry_url": "https://hackage.haskell.org"},
+    "cran":      {"label": "CRAN (R)",                    "language": "R",          "registry_url": "https://cran.r-project.org"},
+    "conda":     {"label": "Conda (Anaconda)",            "language": "Python/R",   "registry_url": "https://anaconda.org"},
+    "homebrew":  {"label": "Homebrew (macOS/Linux tools)", "language": "Shell",     "registry_url": "https://formulae.brew.sh"},
 }
 
 
@@ -2479,13 +2494,12 @@ async def get_stats():
         eco_rows = await conn.fetch("SELECT ecosystem, COUNT(*) as cnt FROM packages GROUP BY ecosystem ORDER BY cnt DESC")
     eco_list = [r["ecosystem"] for r in eco_rows]
     eco_counts = {r["ecosystem"]: r["cnt"] for r in eco_rows}
-    STATS_THRESHOLD = 10000
     return {
         "packages_indexed": pkg_count,
         "vulnerabilities_tracked": vuln_count,
-        "api_calls_today": usage_today if usage_total >= STATS_THRESHOLD else None,
-        "api_calls_total": usage_total if usage_total >= STATS_THRESHOLD else None,
-        "registered_users": users_count if usage_total >= STATS_THRESHOLD else None,
+        "api_calls_today": usage_today,
+        "api_calls_total": usage_total,
+        "registered_users": users_count,
         "trending": [{"ecosystem": r["ecosystem"], "package": r["package_name"], "searches": r["searches"]} for r in top],
         "ecosystems": eco_list,
         "ecosystem_counts": eco_counts,
@@ -4070,12 +4084,36 @@ async def check_exists(ecosystem: str, package: str):
     if cached:
         return cached
 
+    # DB-first fast path: if we've seen the package, return instantly without
+    # hitting the upstream registry. Only fall back to live fetch for packages
+    # missing from our index (likely unknown or very new).
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT latest_version FROM packages WHERE ecosystem=$1 AND LOWER(name)=LOWER($2)",
+                ecosystem, package,
+            )
+        if row:
+            result = {
+                "package": package,
+                "ecosystem": ecosystem,
+                "exists": True,
+                "latest": row["latest_version"],
+                "_source": "db",
+            }
+            await cache_set(cache_key, result, ttl=3600)
+            return result
+    except Exception:
+        pass
+
     pkg_data = await fetch_package(ecosystem, package)
     result = {
         "package": package,
         "ecosystem": ecosystem,
         "exists": pkg_data is not None,
         "latest": pkg_data.get("latest_version") if pkg_data else None,
+        "_source": "registry",
     }
     await cache_set(cache_key, result, ttl=3600)
     return result
