@@ -18,13 +18,13 @@ from datetime import datetime, timezone
 import hashlib
 
 from .common import (
-
-SMTP_USER = "depscope@cuttalo.com"
-SMTP_PASS = os.environ.get("SMTP_PASS", "")
     get_pool, log_action, update_platform_status,
     IMAP_HOST, IMAP_PORT, SMTP_HOST, SMTP_PORT,
     EMAIL_USER, EMAIL_PASS, EMAIL_FROM_NAME,
 )
+
+SMTP_USER = "depscope@cuttalo.com"
+SMTP_PASS = os.environ.get("SMTP_PASS", "")
 
 
 def _make_thread_id(sender: str, subject: str) -> str:

@@ -1705,7 +1705,7 @@ async def save_package_to_db(pkg_data: dict, health_score: int, vulns: list = No
                     maintainers_count, deprecated, deprecated_message, health_score, data_json, updated_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz, $10::timestamptz,
                     $11, $12, $13, $14, $15::jsonb, NOW())
-                ON CONFLICT (ecosystem, name) DO UPDATE SET
+                ON CONFLICT (ecosystem, LOWER(name)) DO UPDATE SET
                     latest_version = EXCLUDED.latest_version,
                     description = EXCLUDED.description,
                     license = EXCLUDED.license,
