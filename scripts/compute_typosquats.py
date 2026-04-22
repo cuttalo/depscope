@@ -95,7 +95,12 @@ async def main():
         for a in anchors:
             aname_low = a["name"].lower()
             a_dw = a["downloads_weekly"] or 0
-            if a_dw < 1000:
+            # Minor ecosystems use GitHub-stars×10 proxy — their top pkgs are far
+            # below the 1000-downloads gate we use for npm/pypi/etc.
+            minor = eco in {"hex", "swift", "cocoapods", "hackage", "pub",
+                             "cran", "homebrew", "conda", "cpan"}
+            min_dw = 100 if minor else 1000
+            if a_dw < min_dw:
                 continue  # don't bother for small anchors
             for cand in candidates:
                 cname_low = cand["name"].lower()
