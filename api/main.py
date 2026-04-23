@@ -22,6 +22,10 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 
 from api.config import VERSION, IP_HASH_SALT
 
+# Process start time for /api/status uptime calculation.  # PATCH_STATUS_V1
+_PROCESS_START_TIME = __import__("time").time()
+
+
 
 # ---- GDPR / intelligence helpers ------------------------------------------
 def _hash_ip(ip: str) -> str:
@@ -957,6 +961,96 @@ async def benchmark_verify(ecosystem: str, package: str):
         "hit_count": row["hit_count"] if row else 0,
         "likely_real_alternative": row["likely_real_alternative"] if row else None,
     }
+
+
+
+# ─── Public reliability / health status ─────────────────────────────  # PATCH_STATUS_V1
+# GET /api/status — zero-auth, public. Returns a shallow health probe
+# for uptime monitors + the /status human page + acquirer due-diligence.
+
+@app.get("/api/status", tags=["discovery"])
+async def public_status():
+    """Public status probe. Returns {ok, uptime_s, components, stats, version}.
+
+    Fast path — no heavy joins. Targets <50ms response. Safe to hammer.
+    """
+    import time as _time
+    start = _time.time()
+    now = _time.time()
+    uptime_s = int(now - _PROCESS_START_TIME)
+
+    components: dict = {}
+    stats: dict = {}
+
+    # DB check
+    db_ok = False
+    packages_count = 0
+    malicious_count = 0
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            packages_count = await conn.fetchval("SELECT COUNT(*) FROM packages")
+            malicious_count = await conn.fetchval("SELECT COUNT(*) FROM malicious_packages")
+            db_ok = True
+    except Exception as e:
+        components["db_error"] = str(e)[:120]
+    components["db"] = "ok" if db_ok else "down"
+
+    # Redis check
+    redis_ok = False
+    try:
+        from api.cache import get_redis
+        r = await get_redis()
+        pong = await r.ping()
+        redis_ok = bool(pong)
+    except Exception as e:
+        components["redis_error"] = str(e)[:120]
+    components["redis"] = "ok" if redis_ok else "down"
+
+    # API calls rate (lightweight — last hour count)
+    api_calls_last_hour = None
+    try:
+        async with (await get_pool()).acquire() as conn:
+            api_calls_last_hour = await conn.fetchval(
+                "SELECT COUNT(*) FROM api_usage WHERE created_at > NOW() - INTERVAL '1 hour'"
+            )
+    except Exception:
+        pass
+
+    stats = {
+        "packages_indexed": packages_count,
+        "malicious_advisories": malicious_count,
+        "ecosystems_supported": 19,
+        "mcp_tools": 22,
+        "api_calls_last_hour": api_calls_last_hour,
+    }
+
+    components["api"] = "ok"
+    overall_ok = db_ok and redis_ok
+
+    return {
+        "ok": overall_ok,
+        "status": "operational" if overall_ok else "degraded",
+        "version": VERSION,
+        "uptime_s": uptime_s,
+        "uptime_human": _fmt_uptime(uptime_s),
+        "components": components,
+        "stats": stats,
+        "probe_ms": int((_time.time() - start) * 1000),
+        "docs": "https://depscope.dev/status",
+    }
+
+
+def _fmt_uptime(s: int) -> str:
+    """Return 'Nd Nh Nm' for a seconds integer."""
+    d, rem = divmod(s, 86400)
+    h, rem = divmod(rem, 3600)
+    m, _ = divmod(rem, 60)
+    parts = []
+    if d: parts.append(f"{d}d")
+    if h or d: parts.append(f"{h}h")
+    parts.append(f"{m}m")
+    return " ".join(parts)
 
 @app.post("/api/admin/unlock", include_in_schema=False)
 async def admin_unlock(request: Request):
