@@ -13,12 +13,55 @@ except Exception:
     MCP_TOOLS_COUNT = 22
 import re
 import asyncio
+import hashlib
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from api.config import VERSION
+from api.config import VERSION, IP_HASH_SALT
+
+
+# ---- GDPR / intelligence helpers ------------------------------------------
+def _hash_ip(ip: str) -> str:
+    """SHA256 hash of IP with project salt. Deterministic for session grouping, zero PII on disk."""
+    if not ip:
+        return ""
+    return hashlib.sha256((ip + IP_HASH_SALT).encode()).hexdigest()
+
+
+# Ordered patterns: first match wins. Keep the most specific first.
+_AGENT_PATTERNS = [
+    ("claude-code",       re.compile(r"claude[- ]?code", re.I)),
+    ("claude-desktop",    re.compile(r"claude[- ]?desktop|anthropic[- ]?claude", re.I)),
+    ("cursor",            re.compile(r"cursor(?!bot)", re.I)),
+    ("windsurf",          re.compile(r"windsurf", re.I)),
+    ("continue",          re.compile(r"continue\.dev|continue[- ]?ide", re.I)),
+    ("aider",             re.compile(r"aider", re.I)),
+    ("devin",             re.compile(r"devin|cognition[- ]?ai", re.I)),
+    ("copilot",           re.compile(r"github[- ]?copilot", re.I)),
+    ("chatgpt",           re.compile(r"chatgpt|openai[- ]?agent", re.I)),
+    ("claude-web",        re.compile(r"^claude$|claude\.ai", re.I)),
+    ("replit",            re.compile(r"replit[- ]?agent", re.I)),
+    ("cody",              re.compile(r"sourcegraph[- ]?cody", re.I)),
+    ("tabnine",           re.compile(r"tabnine", re.I)),
+    ("zed",               re.compile(r"zed[- ]?(industries|agent)", re.I)),
+    ("mcp-generic",       re.compile(r"mcp[/\-]|model[- ]?context[- ]?protocol", re.I)),
+    ("crawler",           re.compile(r"bot|crawl|spider|slurp|mediapartners|googleother|claude_bot|anthropicbot|gptbot|oai-searchbot", re.I)),
+    ("python-sdk",        re.compile(r"python-openai-sdk|anthropic-python|python/.*aiohttp", re.I)),
+    ("browser",           re.compile(r"mozilla/", re.I)),
+    ("curl",              re.compile(r"^curl/", re.I)),
+]
+
+
+def _parse_agent_client(user_agent: str) -> str:
+    """Classify caller into agent_client bucket for intelligence analytics."""
+    if not user_agent:
+        return "unknown"
+    for label, pat in _AGENT_PATTERNS:
+        if pat.search(user_agent):
+            return label
+    return "other"
 
 # IPs to exclude from analytics (our own servers, cron, preprocess)
 EXCLUDED_IPS = {"127.0.0.1", "::1", "10.10.0.140", "10.10.0.1", "91.134.4.25"}
@@ -147,6 +190,53 @@ app.include_router(auth_router)
 app.include_router(payments_router)
 app.include_router(mcp_router)
 app.include_router(verticals_v2_router)
+
+# ─── Password-gated admin (simple) ────────────────────────────────────
+import hmac, hashlib, os as _os
+_ADMIN_PW = _os.environ.get("ADMIN_PASSWORD", "").strip()
+_ADMIN_PW_COOKIE = "depscope_admin_pw"
+_ADMIN_PW_SECRET = _os.environ.get("ADMIN_PW_SECRET", "ds_pw_default_secret_please_rotate")
+
+def _admin_pw_token() -> str:
+    return hmac.new(_ADMIN_PW_SECRET.encode(), _ADMIN_PW.encode(), hashlib.sha256).hexdigest()[:32]
+
+def _has_admin_pw(request: Request) -> bool:
+    if not _ADMIN_PW:
+        return False
+    return request.cookies.get(_ADMIN_PW_COOKIE) == _admin_pw_token()
+
+@app.post("/api/admin/unlock", include_in_schema=False)
+async def admin_unlock(request: Request):
+    if not _ADMIN_PW:
+        raise HTTPException(503, "ADMIN_PASSWORD not set on server")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON")
+    pw = (body or {}).get("password", "")
+    if not hmac.compare_digest(pw, _ADMIN_PW):
+        raise HTTPException(401, "wrong password")
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(
+        _ADMIN_PW_COOKIE, _admin_pw_token(),
+        max_age=60 * 60 * 24 * 30,  # 30 days
+        httponly=True, secure=True, samesite="lax", path="/",
+    )
+    return resp
+
+@app.post("/api/admin/logout-pw", include_in_schema=False)
+async def admin_logout_pw():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(_ADMIN_PW_COOKIE, path="/")
+    return resp
+
+@app.get("/api/admin/pw-ok", include_in_schema=False)
+async def admin_pw_ok(request: Request):
+    if _has_admin_pw(request):
+        return {"ok": True}
+    raise HTTPException(401, "locked")
+# ─── end admin password gate ──────────────────────────────────────────
+
 
 
 @app.middleware("http")
@@ -2629,6 +2719,29 @@ async def get_stats():
             GROUP BY ecosystem, package_name ORDER BY searches DESC LIMIT 10
         """)
         eco_rows = await conn.fetch("SELECT ecosystem, COUNT(*) as cnt FROM packages GROUP BY ecosystem ORDER BY cnt DESC")
+        # Intelligence block (last 7 days, public aggregate)
+        hallucinations_week = await conn.fetchval(
+            "SELECT COUNT(*) FROM api_usage WHERE is_hallucination = TRUE "
+            "AND created_at > NOW() - INTERVAL '7 days'"
+        )
+        top_hallucinated = await conn.fetch(
+            """SELECT ecosystem, package_name, COUNT(*) AS hits,
+                      COUNT(DISTINCT ip_hash) AS callers
+               FROM api_usage
+               WHERE is_hallucination = TRUE
+                 AND created_at > NOW() - INTERVAL '7 days'
+                 AND package_name IS NOT NULL AND package_name <> ''
+               GROUP BY 1,2 ORDER BY hits DESC LIMIT 10"""
+        )
+        agents_rows = await conn.fetch(
+            """SELECT agent_client, COUNT(*) AS calls,
+                      COUNT(*) FILTER(WHERE is_hallucination) AS hallucinations
+               FROM api_usage
+               WHERE created_at > NOW() - INTERVAL '7 days'
+                 AND agent_client IS NOT NULL
+                 AND agent_client NOT IN ('crawler','unknown')
+               GROUP BY 1 ORDER BY calls DESC LIMIT 10"""
+        )
     eco_list = [r["ecosystem"] for r in eco_rows]
     eco_counts = {r["ecosystem"]: r["cnt"] for r in eco_rows}
     return {
@@ -2640,6 +2753,19 @@ async def get_stats():
         "trending": [{"ecosystem": r["ecosystem"], "package": r["package_name"], "searches": r["searches"]} for r in top],
         "ecosystems": eco_list,
         "ecosystem_counts": eco_counts,
+        "intel": {
+            "hallucinations_week": hallucinations_week or 0,
+            "top_hallucinated": [
+                {"ecosystem": r["ecosystem"], "package": r["package_name"],
+                 "hits": r["hits"], "callers": r["callers"]}
+                for r in top_hallucinated
+            ],
+            "agents_breakdown": [
+                {"client": r["agent_client"], "calls": r["calls"],
+                 "hallucinations": r["hallucinations"]}
+                for r in agents_rows
+            ],
+        },
         "version": VERSION,
         "pricing": "free",
         "mcp_tools": MCP_TOOLS_COUNT,
@@ -2649,9 +2775,10 @@ async def get_stats():
 @app.get("/api/admin/dashboard", include_in_schema=False)
 async def admin_dashboard(request: Request):
     """Admin dashboard data."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         users = await conn.fetch("SELECT id, email, role, plan, api_key, created_at FROM users ORDER BY created_at DESC")
@@ -2993,33 +3120,162 @@ def _log_usage(ecosystem: str, package: str, request: Request = None,
                 try:
                     # Extract mcp_tool from source="mcp:<tool>" for dedicated column
                     mcp_tool_val = source[4:] if source.startswith("mcp:") else None
+                    # GDPR: compute hash + sanitize — NEVER store raw IP on disk
+                    ip_hash_val = _hash_ip(ip) if ip else None
+                    # Intelligence: classify caller + flag hallucination candidates
+                    agent_client_val = _parse_agent_client(ua)
+                    is_hallucination_val = (
+                        status_code == 404
+                        and ep in ("check", "package_exists", "exists", "package-exists")
+                    )
                     await conn.execute(
                         """INSERT INTO api_usage
-                           (endpoint, ecosystem, package_name, ip_address, user_agent, source,
-                            country, response_time_ms, cache_hit, session_id, status_code, api_key_id, mcp_tool)
-                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)""",
-                        ep, ecosystem, package, ip, ua[:500], source,
+                           (endpoint, ecosystem, package_name, user_agent, source,
+                            country, response_time_ms, cache_hit, session_id, status_code, api_key_id, mcp_tool,
+                            ip_hash, agent_client, is_hallucination)
+                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)""",
+                        ep, ecosystem, package, ua[:500], source,
                         country_val, response_time_ms, cache_hit, session_id, status_code, api_key_id, mcp_tool_val,
+                        ip_hash_val, agent_client_val, is_hallucination_val,
                     )
                 except Exception:
-                    # Fallback su schema vecchio
+                    # Fallback minimal — post-ip_address-drop schema
                     await conn.execute(
-                        "INSERT INTO api_usage (endpoint, ecosystem, package_name, ip_address, user_agent, source) VALUES ($1,$2,$3,$4,$5,$6)",
-                        ep, ecosystem, package, ip, ua[:500], source,
+                        "INSERT INTO api_usage (endpoint, ecosystem, package_name, user_agent, source) VALUES ($1,$2,$3,$4,$5)",
+                        ep, ecosystem, package, ua[:500], source,
                     )
         except Exception:
             pass
     asyncio.create_task(_log())
 
 
+# ============================================================================
+# GDPR ENDPOINTS (Art. 15/17/20) — data portability, erasure, access
+# ============================================================================
+
+@app.post("/api/gdpr/delete")
+async def gdpr_delete(request: Request):
+    """GDPR Art. 17 — Right to erasure.
+
+    The caller's IP is hashed server-side and all matching api_usage rows
+    are removed. No authentication needed: the caller proves ownership
+    simply by originating the request (you can only erase what came
+    from your own network path).
+
+    Rate limit: 10 req/hour per IP (prevents spam).
+    """
+    ip = request.headers.get("CF-Connecting-IP", request.client.host if request.client else "")
+    if not ip:
+        raise HTTPException(400, "cannot determine caller IP")
+    ip_hash = _hash_ip(ip)
+    # Rate-limit using our standard helper (10/hour for GDPR to limit abuse)
+    rl = await rate_limit_check(f"gdpr:{ip_hash}", limit=10, window=3600)
+    allowed = rl[0] if isinstance(rl, (tuple, list)) else bool(rl)
+    if not allowed:
+        raise HTTPException(429, "Too many GDPR requests. Try again in 1 hour.")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        res = await conn.execute(
+            "DELETE FROM api_usage WHERE ip_hash=$1",
+            ip_hash,
+        )
+        try:
+            deleted_sessions = await conn.execute(
+                "DELETE FROM api_sessions WHERE ip_hash=$1",
+                ip_hash,
+            )
+        except Exception:
+            deleted_sessions = "DELETE 0"
+    return {
+        "ok": True,
+        "ip_hash": ip_hash,
+        "deleted_usage": res.split()[-1] if res else "0",
+        "deleted_sessions": deleted_sessions.split()[-1] if deleted_sessions else "0",
+        "disclaimer": (
+            "Raw IPs were not stored; only the salted hash of your IP was kept. "
+            "Deletion has been applied to all rows matching your current IP hash."
+        ),
+    }
+
+
+@app.get("/api/gdpr/export")
+async def gdpr_export(request: Request):
+    """GDPR Art. 15/20 — Right of access + data portability.
+
+    Returns all api_usage rows linked to the caller's current IP hash.
+    JSON format. Downloadable. No PII beyond aggregated columns
+    (we don't store raw IP; see /privacy).
+
+    Rate limit: 10 req/hour per IP.
+    """
+    ip = request.headers.get("CF-Connecting-IP", request.client.host if request.client else "")
+    if not ip:
+        raise HTTPException(400, "cannot determine caller IP")
+    ip_hash = _hash_ip(ip)
+    rl = await rate_limit_check(f"gdpr:{ip_hash}", limit=10, window=3600)
+    allowed = rl[0] if isinstance(rl, (tuple, list)) else bool(rl)
+    if not allowed:
+        raise HTTPException(429, "Too many GDPR requests. Try again in 1 hour.")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, created_at, endpoint, ecosystem, package_name,
+                      user_agent, source, country, cache_hit, session_id,
+                      status_code, mcp_tool, agent_client, is_hallucination
+               FROM api_usage WHERE ip_hash=$1
+               ORDER BY created_at DESC
+               LIMIT 10000""",
+            ip_hash,
+        )
+    return {
+        "ip_hash": ip_hash,
+        "count": len(rows),
+        "disclaimer": "Raw IP never stored. Hash derived from your current IP + project salt.",
+        "records": [dict(r) for r in rows],
+    }
+
+
+@app.get("/api/gdpr/policy")
+async def gdpr_policy():
+    """Short machine-readable description of what we store and how long."""
+    return {
+        "version": "1.0",
+        "effective_date": "2026-04-23",
+        "data_collected": {
+            "ip_hash": "SHA256(IP+salt) — one-way, no reverse mapping",
+            "user_agent": "string (max 500 chars) — classified into agent_client bucket",
+            "endpoint": "which API endpoint was called",
+            "ecosystem+package_name": "what package you asked about",
+            "country": "2-letter code (from CDN, coarse)",
+            "status_code": "200/404/5xx",
+            "timestamps": "UTC timestamp of call",
+        },
+        "data_NOT_collected": [
+            "raw IP address (never written to disk)",
+            "email, name, or any personal identity",
+            "cookies, device IDs, fingerprints",
+            "package source code or private metadata",
+        ],
+        "retention": {
+            "raw_rows_api_usage": "30 days",
+            "aggregated_insights": "indefinite (anonymized)",
+        },
+        "rights": {
+            "access_export": "GET /api/gdpr/export",
+            "erasure": "POST /api/gdpr/delete",
+            "rate_limit": "10 requests/hour for GDPR endpoints",
+        },
+        "contact": "privacy@depscope.dev",
+    }
 
 
 @app.get("/api/admin/sources", include_in_schema=False)
 async def admin_sources(request: Request):
     """API usage breakdown by source (RapidAPI, GPT, Claude, MCP, browser, sdk)."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         by_source = await conn.fetch("""
@@ -3040,15 +3296,15 @@ async def admin_sources(request: Request):
             GROUP BY source ORDER BY calls DESC
         """)
         rapidapi_users = await conn.fetch("""
-            SELECT DISTINCT ip_address, user_agent, MAX(created_at) as last_seen
+            SELECT DISTINCT ip_hash, user_agent, MAX(created_at) as last_seen
             FROM api_usage WHERE source = 'rapidapi'
-            GROUP BY ip_address, user_agent ORDER BY last_seen DESC LIMIT 20
+            GROUP BY ip_hash, user_agent ORDER BY last_seen DESC LIMIT 20
         """)
     return {
         "total": {r["source"]: r["calls"] for r in by_source},
         "today": {r["source"]: r["calls"] for r in by_source_today},
         "week": {r["source"]: r["calls"] for r in by_source_week},
-        "rapidapi_users": [{"ip": r["ip_address"], "ua": r["user_agent"][:100], "last_seen": r["last_seen"].isoformat()} for r in rapidapi_users],
+        "rapidapi_users": [{"ip_hash": r["ip_hash"], "ua": r["user_agent"][:100], "last_seen": r["last_seen"].isoformat()} for r in rapidapi_users],
     }
 
 @app.get("/openapi-gpt.json", include_in_schema=False)
@@ -3594,9 +3850,10 @@ async def admin_automation(request: Request):
     from datetime import datetime, timezone
     from pathlib import Path
 
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
 
     LOG_DIR = Path("/var/log/depscope")
 
@@ -3726,9 +3983,10 @@ async def admin_automation(request: Request):
 @app.get("/api/admin/stats", include_in_schema=False)
 async def admin_stats_full(request: Request):
     """Admin only: full stats without threshold hiding."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         pkg_count = await conn.fetchval("SELECT COUNT(*) FROM packages")
@@ -3759,9 +4017,10 @@ async def admin_overview(request: Request, range: str = "30d"):
     users, subscriptions, revenue, per-ecosystem coverage matrix, and cache /
     latency / error quality metrics.
     """
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
 
     range_map = {"1d": "1 day", "7d": "7 days", "30d": "30 days", "90d": "90 days"}
     interval = range_map.get(range)
@@ -3795,7 +4054,7 @@ async def admin_overview(request: Request, range: str = "30d"):
                     COUNT(*)                                                AS calls,
                     COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '1 day')
                                                                             AS calls_24h,
-                    COUNT(DISTINCT ip_address)                              AS unique_ips,
+                    COUNT(DISTINCT ip_hash)                              AS unique_ips,
                     COUNT(DISTINCT country)                                 AS unique_countries,
                     COUNT(*) FILTER (WHERE cache_hit)                       AS cache_hits,
                     COUNT(*) FILTER (WHERE status_code >= 400)              AS errors,
@@ -3884,9 +4143,10 @@ async def admin_overview(request: Request, range: str = "30d"):
 @app.get("/api/admin/insights", include_in_schema=False)
 async def admin_insights(request: Request):
     """Admin insights — DB quality & API key usage."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -3969,12 +4229,12 @@ async def admin_insights(request: Request):
         suspect_rows = await conn.fetch("""
             SELECT DATE_TRUNC('hour', created_at) AS hr,
                    COUNT(*)                    AS calls,
-                   COUNT(DISTINCT ip_address)  AS ips
+                   COUNT(DISTINCT ip_hash)  AS ips
             FROM api_usage
             WHERE source = 'browser'
             GROUP BY hr
             HAVING COUNT(*) > 200
-               AND COUNT(*)::float / GREATEST(COUNT(DISTINCT ip_address), 1) > 20
+               AND COUNT(*)::float / GREATEST(COUNT(DISTINCT ip_hash), 1) > 20
             ORDER BY calls DESC LIMIT 10
         """)
         suspect_browser_hours = [
@@ -4004,9 +4264,10 @@ async def admin_timeseries(request: Request, range: str = "7d", view: str = "all
     - by_endpoint:    call count per endpoint label
     - by_source_day:  per-day breakdown of source buckets (claude_bot, browser, …)
     """
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
 
     range_map = {"1d": "1 day", "7d": "7 days", "30d": "30 days", "90d": "90 days"}
     interval = range_map.get(range)
@@ -4028,7 +4289,7 @@ async def admin_timeseries(request: Request, range: str = "7d", view: str = "all
                    COUNT(*) AS calls,
                    COUNT(*) FILTER (WHERE cache_hit) AS cache_hits,
                    COUNT(*) FILTER (WHERE status_code >= 400) AS errors,
-                   COUNT(DISTINCT ip_address) AS unique_ips,
+                   COUNT(DISTINCT ip_hash) AS unique_ips,
                    COALESCE(AVG(response_time_ms)::int, 0) AS avg_ms,
                    COALESCE(
                        PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY response_time_ms)::int, 0
@@ -4110,9 +4371,10 @@ async def admin_plan_metrics(request: Request):
     Shows the TRUE state of the product — no threshold hiding, no marketing
     rounding. Admin only.
     """
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -4152,7 +4414,7 @@ async def admin_plan_metrics(request: Request):
             "SELECT COUNT(*) FROM api_usage WHERE created_at > NOW() - INTERVAL '7 days' AND user_agent NOT ILIKE '%bot%' AND user_agent NOT ILIKE '%crawl%' AND user_agent != ''"
         ) or 0
         unique_ips_30d = await conn.fetchval(
-            "SELECT COUNT(DISTINCT ip_address) FROM api_usage WHERE created_at > NOW() - INTERVAL '30 days' AND ip_address IS NOT NULL"
+            "SELECT COUNT(DISTINCT ip_hash) FROM api_usage WHERE created_at > NOW() - INTERVAL '30 days'"
         ) or 0
         users_count = await conn.fetchval("SELECT COUNT(*) FROM users") or 0
         users_by_plan = await conn.fetch(
@@ -4893,9 +5155,10 @@ async def track_pageview(request: Request):
 @app.get("/api/admin/pageviews", include_in_schema=False)
 async def admin_pageviews(request: Request):
     """Admin: page view analytics."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -4943,9 +5206,10 @@ async def admin_pageviews(request: Request):
 @app.get("/api/admin/charts", include_in_schema=False)
 async def admin_charts(request: Request):
     """Admin: chart data for dashboard graphs."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -5224,7 +5488,7 @@ async def get_savings():
     pool = await get_pool()
     async with pool.acquire() as conn:
         total_checks = await conn.fetchval(
-            "SELECT COUNT(*) FROM api_usage WHERE ip_address NOT IN ('127.0.0.1','::1','10.10.0.140','10.10.0.1','91.134.4.25')"
+            "SELECT COUNT(*) FROM api_usage"
         )
 
     tokens_without = 8500   # avg tokens per check without DepScope
@@ -5256,9 +5520,10 @@ async def get_savings():
 @app.get("/api/admin/agent/rules", include_in_schema=False)
 async def get_agent_rules(request: Request):
     """Get all active agent rules."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM agent_rules WHERE active = true ORDER BY priority, category")
@@ -5266,9 +5531,10 @@ async def get_agent_rules(request: Request):
 
 @app.post("/api/admin/agent/rules", include_in_schema=False)
 async def add_agent_rule(request: Request):
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     body = await request.json()
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -5278,9 +5544,10 @@ async def add_agent_rule(request: Request):
 
 @app.delete("/api/admin/agent/rules/{rule_id}", include_in_schema=False)
 async def delete_agent_rule(rule_id: int, request: Request):
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute("UPDATE agent_rules SET active = false WHERE id = $1", rule_id)
@@ -5288,9 +5555,10 @@ async def delete_agent_rule(rule_id: int, request: Request):
 
 @app.get("/api/admin/agent/plan", include_in_schema=False)
 async def get_agent_plan(request: Request):
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM agent_plan ORDER BY priority, timeframe, created_at")
@@ -5298,9 +5566,10 @@ async def get_agent_plan(request: Request):
 
 @app.post("/api/admin/agent/plan", include_in_schema=False)
 async def add_plan_action(request: Request):
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     body = await request.json()
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -5310,9 +5579,10 @@ async def add_plan_action(request: Request):
 
 @app.put("/api/admin/agent/plan/{plan_id}", include_in_schema=False)
 async def update_plan(plan_id: int, request: Request):
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     body = await request.json()
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -5334,9 +5604,10 @@ async def update_plan(plan_id: int, request: Request):
 
 @app.get("/api/admin/agent/actions", include_in_schema=False)
 async def get_agent_actions(request: Request):
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM agent_actions ORDER BY created_at DESC LIMIT 50")
@@ -5344,9 +5615,10 @@ async def get_agent_actions(request: Request):
 
 @app.get("/api/admin/agent/opportunities", include_in_schema=False)
 async def get_opportunities(request: Request):
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM agent_opportunities WHERE status NOT IN ('skipped', 'done') ORDER BY CASE status WHEN 'execute' THEN 0 WHEN 'content_ready' THEN 1 WHEN 'approved' THEN 2 WHEN 'found' THEN 3 WHEN 'manual_post' THEN 4 ELSE 5 END, relevance_score DESC LIMIT 30")
@@ -5355,9 +5627,10 @@ async def get_opportunities(request: Request):
 @app.put("/api/admin/agent/opportunities/{opp_id}", include_in_schema=False)
 async def update_opportunity(opp_id: int, request: Request):
     """Update opportunity status and/or suggested_content."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     body = await request.json()
     pool = await get_pool()
     status = body.get("status")
@@ -5376,9 +5649,10 @@ async def update_opportunity(opp_id: int, request: Request):
 
 @app.get("/api/admin/agent/metrics", include_in_schema=False)
 async def get_agent_metrics(request: Request):
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM agent_metrics ORDER BY date DESC LIMIT 30")
@@ -5392,9 +5666,10 @@ async def get_agent_metrics(request: Request):
 @app.post("/api/admin/agent/run", include_in_schema=False)
 async def run_agent_now(request: Request):
     """Trigger manual agent run."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     import subprocess
     result = subprocess.Popen(
         ["/home/deploy/depscope/.venv/bin/python3", "-m", "scripts.agents.orchestrator"],
@@ -5408,9 +5683,10 @@ async def run_agent_now(request: Request):
 @app.get("/api/admin/agent/opportunities/all", include_in_schema=False)
 async def get_all_opportunities(request: Request):
     """Get all opportunities (all statuses) for the full workflow view."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -5422,9 +5698,10 @@ async def get_all_opportunities(request: Request):
 @app.get("/api/admin/agent/dashboard", include_in_schema=False)
 async def get_agent_dashboard(request: Request):
     """Dashboard KPIs and summary data."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         opps_today = await conn.fetchval(
@@ -5472,9 +5749,10 @@ async def get_agent_dashboard(request: Request):
 @app.get("/api/admin/agent/platforms", include_in_schema=False)
 async def get_platforms(request: Request):
     """Get platform connection status."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM agent_platform_status ORDER BY platform")
@@ -5484,9 +5762,10 @@ async def get_platforms(request: Request):
 @app.get("/api/admin/agent/timeline", include_in_schema=False)
 async def get_timeline(request: Request):
     """Get chronological timeline of ALL actions."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
@@ -5499,9 +5778,10 @@ async def get_timeline(request: Request):
 @app.get("/api/admin/agent/emails", include_in_schema=False)
 async def get_email_threads(request: Request):
     """Get email conversations grouped by thread."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
@@ -5514,9 +5794,10 @@ async def get_email_threads(request: Request):
 
 @app.put("/api/admin/agent/opportunities/{opp_id}/approve", include_in_schema=False)
 async def approve_opportunity(opp_id: int, request: Request):
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         opp = await conn.fetchrow("SELECT * FROM agent_opportunities WHERE id=$1", opp_id)
@@ -5605,9 +5886,10 @@ async def _generate_content_for_opp(opp: dict):
 @app.get("/api/admin/agent/opportunities/{opp_id}/article", include_in_schema=False)
 async def fetch_article_content(opp_id: int, request: Request):
     """Fetch the original article/post content from the source platform."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         opp = await conn.fetchrow("SELECT platform, url, title FROM agent_opportunities WHERE id=$1", opp_id)
@@ -5654,9 +5936,10 @@ async def fetch_article_content(opp_id: int, request: Request):
 
 @app.put("/api/admin/agent/opportunities/{opp_id}/execute", include_in_schema=False)
 async def execute_opportunity(opp_id: int, request: Request):
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute("UPDATE agent_opportunities SET status='execute' WHERE id=$1", opp_id)
@@ -5665,9 +5948,10 @@ async def execute_opportunity(opp_id: int, request: Request):
 
 @app.put("/api/admin/agent/opportunities/{opp_id}/reject", include_in_schema=False)
 async def reject_opportunity(opp_id: int, request: Request):
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     body = await request.json()
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -5678,9 +5962,10 @@ async def reject_opportunity(opp_id: int, request: Request):
 @app.put("/api/admin/agent/opportunities/{opp_id}/content", include_in_schema=False)
 async def update_content(opp_id: int, request: Request):
     """Edit generated content before executing."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     body = await request.json()
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -5695,9 +5980,10 @@ async def update_content(opp_id: int, request: Request):
 @app.get("/api/admin/agent/config", include_in_schema=False)
 async def get_agent_config(request: Request):
     """Get all agent configuration values."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM agent_config ORDER BY category, key")
@@ -5707,9 +5993,10 @@ async def get_agent_config(request: Request):
 @app.put("/api/admin/agent/config/{key}", include_in_schema=False)
 async def update_agent_config(key: str, request: Request):
     """Update a single config value."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     body = await request.json()
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -5725,9 +6012,10 @@ async def update_agent_config(key: str, request: Request):
 @app.get("/api/admin/agent/config/{key}", include_in_schema=False)
 async def get_single_config(key: str, request: Request):
     """Get a single config value."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM agent_config WHERE key = $1", key)
@@ -5755,9 +6043,10 @@ _rt_agent_state = {
 @app.get("/api/admin/agent/state", include_in_schema=False)
 async def get_agent_state(request: Request):
     """Get current real-time agent state."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     return {
         "active": _rt_agent_state["active"],
         "running": _rt_agent_state["running"],
@@ -5769,9 +6058,10 @@ async def get_agent_state(request: Request):
 @app.post("/api/admin/agent/toggle", include_in_schema=False)
 async def toggle_realtime_agent(request: Request):
     """Attiva/disattiva l'agente real-time."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
 
     _rt_agent_state["active"] = not _rt_agent_state["active"]
     _rt_agent_state["queue"].clear()
@@ -5825,9 +6115,10 @@ async def push_rt_notification(request: Request):
 @app.get("/api/admin/agent/notifications", include_in_schema=False)
 async def get_rt_notifications(request: Request):
     """Get pending notifications and clear queue — polling endpoint."""
-    user = await _get_user_from_request(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
 
     items = list(_rt_agent_state["queue"])
     _rt_agent_state["queue"].clear()
@@ -5865,9 +6156,10 @@ async def translate_text(text: str, to: str = "it"):
 @app.get("/api/admin/intelligence", include_in_schema=False)
 async def intelligence_dashboard(request: Request):
     """Aggregated AI-agent intelligence for admin dashboard."""
-    user = await _get_user_from_request(request)
-    if not user or user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
     pool = await get_pool()
     async with pool.acquire() as conn:
         top_searches = await conn.fetch("""
@@ -5883,7 +6175,7 @@ async def intelligence_dashboard(request: Request):
         agent_breakdown = await conn.fetch("""
             SELECT COALESCE(source, 'unknown') AS source,
                    COUNT(*) AS calls,
-                   COUNT(DISTINCT ip_address) AS unique_ips
+                   COUNT(DISTINCT ip_hash) AS unique_ips
             FROM api_usage
             WHERE created_at > NOW() - INTERVAL '7 days' AND COALESCE(source, '') <> ''
             GROUP BY source
@@ -5892,7 +6184,7 @@ async def intelligence_dashboard(request: Request):
         countries = await conn.fetch("""
             SELECT country,
                    COUNT(*) AS calls,
-                   COUNT(DISTINCT ip_address) AS unique_ips
+                   COUNT(DISTINCT ip_hash) AS unique_ips
             FROM api_usage
             WHERE country IS NOT NULL AND created_at > NOW() - INTERVAL '7 days'
             GROUP BY country
@@ -5943,7 +6235,7 @@ async def intelligence_dashboard(request: Request):
         totals = await conn.fetchrow("""
             SELECT COUNT(*) AS calls_7d,
                    COUNT(DISTINCT session_id) AS sessions_7d,
-                   COUNT(DISTINCT ip_address) AS ips_7d,
+                   COUNT(DISTINCT ip_hash) AS ips_7d,
                    AVG(response_time_ms)::INT AS avg_ms_7d,
                    SUM(CASE WHEN cache_hit THEN 1 ELSE 0 END)::FLOAT
                      / GREATEST(COUNT(*),1) AS cache_hit_rate_7d
@@ -6111,7 +6403,7 @@ async def traffic_breakdown(request: Request, hours: int = 24):
     AI_UA = r"(GPTBot|OAI-SearchBot|ChatGPT-User|PerplexityBot|CCBot|ClaudeBot|anthropic-ai|Bytespider|Amazonbot|Applebot)"
     SEARCH_UA = r"(Googlebot|GoogleOther|Google-InspectionTool|Googlebot-Image|Mediapartners|Bingbot|Slurp|DuckDuckBot|Yandex|Baiduspider)"
     OTHER_BOT_UA = r"(AhrefsBot|SemrushBot|MJ12bot|DotBot|PetalBot|facebookexternalhit|Discordbot|TelegramBot|WhatsApp|Twitterbot|LinkedInBot|Pingdom|UptimeRobot|Site24x7|bot|crawl|spider)"
-    INTERNAL_IP = "(ip_address LIKE '10.10.%' OR ip_address LIKE '127.%' OR ip_address LIKE '37.182.176.%' OR ip_address LIKE '37.182.177.%' OR ip_address LIKE '91.134.4.%' OR ip_address IN ('::1','10.10.0.140','10.10.0.1','91.134.4.25'))"
+    INTERNAL_IP = "FALSE"  # ip_address column dropped; internal traffic excluded at _log_usage
 
     async with (await get_pool()).acquire() as conn:
         row = await conn.fetchrow(f"""
@@ -6186,7 +6478,7 @@ async def launch_metrics(request: Request):
         # API traffic (last 24h)
         api_24h = await conn.fetchval("SELECT COUNT(*) FROM api_usage WHERE created_at > NOW() - INTERVAL '24 hours'")
         api_total = await conn.fetchval("SELECT COUNT(*) FROM api_usage")
-        api_ips = await conn.fetchval("SELECT COUNT(DISTINCT ip_address) FROM api_usage WHERE created_at > NOW() - INTERVAL '24 hours'")
+        api_ips = await conn.fetchval("SELECT COUNT(DISTINCT ip_hash) FROM api_usage WHERE created_at > NOW() - INTERVAL '24 hours'")
 
     # GitHub (new account)
     gh_stars = gh_forks = gh_watchers = 0
@@ -6274,4 +6566,84 @@ async def launch_metrics(request: Request):
     }
 
 # --- END EMAIL TRACKING ROUTES ---
+
+
+
+@app.get("/api/admin/outreach", include_in_schema=False)
+async def admin_outreach_list(request: Request, limit: int = 200, campaign: str = None):
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    limit = max(1, min(int(limit or 200), 1000))
+    async with pool.acquire() as conn:
+        if campaign:
+            rows = await conn.fetch(
+                """SELECT id, tracking_id, to_email, to_name, outlet, from_email,
+                          subject, campaign, scheduled_for, sent_at, smtp_response,
+                          bounce_at, reply_at, created_at,
+                          length(body_md) AS body_len
+                   FROM outreach_emails
+                   WHERE campaign = $1
+                   ORDER BY created_at DESC LIMIT $2""",
+                campaign, limit,
+            )
+        else:
+            rows = await conn.fetch(
+                """SELECT id, tracking_id, to_email, to_name, outlet, from_email,
+                          subject, campaign, scheduled_for, sent_at, smtp_response,
+                          bounce_at, reply_at, created_at,
+                          length(body_md) AS body_len
+                   FROM outreach_emails
+                   ORDER BY created_at DESC LIMIT $1""",
+                limit,
+            )
+        # Aggregates
+        agg = await conn.fetchrow(
+            """SELECT
+                 COUNT(*)                                       AS total,
+                 COUNT(*) FILTER (WHERE sent_at IS NOT NULL)     AS sent,
+                 COUNT(*) FILTER (WHERE reply_at IS NOT NULL)    AS replied,
+                 COUNT(*) FILTER (WHERE bounce_at IS NOT NULL)   AS bounced,
+                 COUNT(*) FILTER (WHERE sent_at IS NULL AND bounce_at IS NULL) AS queued,
+                 COUNT(DISTINCT campaign)                        AS campaigns,
+                 COUNT(DISTINCT outlet)                          AS outlets
+               FROM outreach_emails"""
+        )
+        campaigns = await conn.fetch(
+            """SELECT campaign,
+                      COUNT(*)                                    AS total,
+                      COUNT(*) FILTER (WHERE sent_at IS NOT NULL)  AS sent,
+                      COUNT(*) FILTER (WHERE reply_at IS NOT NULL) AS replied,
+                      COUNT(*) FILTER (WHERE bounce_at IS NOT NULL) AS bounced,
+                      MIN(created_at)                             AS first_at,
+                      MAX(created_at)                             AS last_at
+               FROM outreach_emails
+               WHERE campaign IS NOT NULL
+               GROUP BY campaign
+               ORDER BY last_at DESC"""
+        )
+    return {
+        "aggregates": dict(agg) if agg else {},
+        "campaigns":  [dict(c) for c in campaigns],
+        "items":      [dict(r) for r in rows],
+        "count":      len(rows),
+    }
+
+
+@app.get("/api/admin/outreach/{email_id}", include_in_schema=False)
+async def admin_outreach_detail(email_id: int, request: Request):
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM outreach_emails WHERE id = $1", email_id,
+        )
+    if not row:
+        raise HTTPException(404, "Not found")
+    return dict(row)
 

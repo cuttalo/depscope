@@ -933,71 +933,110 @@ async def fetch_hex(name: str) -> dict | None:
 
 
 async def fetch_swift(name: str) -> dict | None:
-    """Fetch Swift package info via GitHub search for Package.swift repos."""
-    # Search GitHub for Swift packages matching the name
-    search_url = f"https://api.github.com/search/repositories?q={name}+language:swift&sort=stars&per_page=5"
+    """Fetch Swift package info.
+
+    Accepts two forms:
+      - "<owner>/<repo>"  : direct GitHub coordinate (preferred, authoritative).
+      - "<name>"          : fallback via GH search (matches old behaviour for
+                            short names still used by older agents).
+
+    Uses GH_TOKEN / GITHUB_TOKEN when present (5000 req/hr vs 60/hr).
+    """
+    import os as _os
+    gh_token = _os.environ.get("GH_TOKEN") or _os.environ.get("GITHUB_TOKEN")
+    base_headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "DepScope/1.0 (+https://depscope.dev)",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if gh_token:
+        base_headers["Authorization"] = f"Bearer {gh_token}"
+
+    owner_repo = None
+    if "/" in name:
+        owner_repo = name.strip("/")
+    else:
+        # Fallback: GH search (legacy path) to locate owner/repo
+        try:
+            async with aiohttp.ClientSession() as session:
+                sq = f"https://api.github.com/search/repositories?q={name}+language:swift&sort=stars&per_page=3"
+                async with session.get(sq, headers=base_headers,
+                                       timeout=aiohttp.ClientTimeout(total=15)) as r:
+                    if r.status == 200:
+                        data = await r.json()
+                        items = data.get("items") or []
+                        match = next((i for i in items if i.get("name", "").lower() == name.lower()), None)
+                        if not match and items:
+                            match = items[0]
+                        if match:
+                            owner_repo = match.get("full_name")
+        except Exception:
+            return None
+    if not owner_repo:
+        return None
+
+    # Fetch repo metadata
     try:
         async with aiohttp.ClientSession() as session:
-            headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": "DepScope/0.1 (https://depscope.dev)"}
-            async with session.get(search_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status != 200:
+            async with session.get(f"https://api.github.com/repos/{owner_repo}",
+                                   headers=base_headers,
+                                   timeout=aiohttp.ClientTimeout(total=15)) as r:
+                if r.status != 200:
                     return None
-                data = await resp.json()
+                repo = await r.json()
+
+            # Latest release preferred, fallback to tag
+            latest_version = ""
+            versions_list: list[str] = []
+            last_published = None
+            try:
+                async with session.get(f"https://api.github.com/repos/{owner_repo}/releases/latest",
+                                       headers=base_headers,
+                                       timeout=aiohttp.ClientTimeout(total=10)) as r:
+                    if r.status == 200:
+                        rel = await r.json()
+                        latest_version = rel.get("tag_name") or ""
+                        last_published = rel.get("published_at") or rel.get("created_at")
+            except Exception:
+                pass
+            if not latest_version:
+                try:
+                    async with session.get(f"https://api.github.com/repos/{owner_repo}/tags?per_page=20",
+                                           headers=base_headers,
+                                           timeout=aiohttp.ClientTimeout(total=10)) as r:
+                        if r.status == 200:
+                            tags = await r.json()
+                            versions_list = [t.get("name", "") for t in tags]
+                            latest_version = versions_list[0] if versions_list else ""
+                except Exception:
+                    pass
     except Exception:
         return None
 
-    items = data.get("items", [])
-    if not items:
-        return None
-
-    # Find exact match by repo name or first result
-    repo = None
-    for item in items:
-        if item.get("name", "").lower() == name.lower():
-            repo = item
-            break
-    if not repo:
-        repo = items[0]
-
-    repo_url = repo.get("html_url", "")
-
-    # Try to get latest release/tag
-    latest_version = ""
-    versions_list = []
-    try:
-        async with aiohttp.ClientSession() as session:
-            tags_url = f"https://api.github.com/repos/{repo['full_name']}/tags?per_page=20"
-            headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": "DepScope/0.1 (https://depscope.dev)"}
-            async with session.get(tags_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status == 200:
-                    tags = await resp.json()
-                    versions_list = [t.get("name", "") for t in tags]
-                    latest_version = versions_list[0] if versions_list else ""
-    except Exception:
-        pass
-
-    # Swift has no central downloads metric; use GitHub stars as a popularity
-    # proxy (scaled ×10 so ranges align loosely with npm-style thresholds:
-    # 10K stars → 100K "downloads" → 14 popularity points).
     stars = int(repo.get("stargazers_count") or 0)
+    license_obj = repo.get("license") or {}
+    lic = (license_obj.get("spdx_id") or license_obj.get("name") or "") if isinstance(license_obj, dict) else ""
+    repo_url = repo.get("html_url") or f"https://github.com/{owner_repo}"
     return {
         "ecosystem": "swift",
-        "name": name,
+        "name": owner_repo if "/" in name else name,
         "latest_version": latest_version or None,
-        "description": repo.get("description", ""),
-        "license": repo.get("license", {}).get("spdx_id", "") if isinstance(repo.get("license"), dict) else "",
-        "homepage": repo.get("homepage", "") or repo_url,
+        "description": (repo.get("description") or "")[:500],
+        "license": lic,
+        "homepage": repo.get("homepage") or repo_url,
         "repository": repo_url,
         "downloads_weekly": stars * 10,
         "maintainers_count": 1,
         "deprecated": repo.get("archived", False),
         "deprecated_message": "Archived" if repo.get("archived") else None,
         "first_published": repo.get("created_at"),
-        "last_published": repo.get("pushed_at"),
+        "last_published": last_published or repo.get("pushed_at"),
         "versions": versions_list[:20],
         "all_version_count": len(versions_list),
         "dependencies": [],
         "stars": stars,
+        "forks": repo.get("forks_count", 0),
+        "open_issues": repo.get("open_issues_count", 0),
     }
 
 
@@ -1679,6 +1718,37 @@ async def fetch_vulnerabilities(
         return []
 
 
+def _sanitize_str(s):
+    """Strip NUL chars that SQL_ASCII cannot translate (silent ingestion loss fix)."""
+    if s is None:
+        return None
+    if isinstance(s, str):
+        return s.replace("\x00", "")
+    return s
+
+
+import re as _re_pii
+_EMAIL_PII_RE = _re_pii.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
+
+
+def _scrub_pii(obj):
+    """Recursively remove maintainer emails from nested dict/list/str — privacy by default."""
+    if isinstance(obj, str):
+        return _EMAIL_PII_RE.sub("[email-redacted]", obj)
+    if isinstance(obj, list):
+        return [_scrub_pii(v) for v in obj]
+    if isinstance(obj, dict):
+        return {k: _scrub_pii(v) for k, v in obj.items()}
+    return obj
+
+
+def _safe_json_dumps(obj):
+    """json.dumps + strip NUL escapes AND redact emails. PII-free JSONB output."""
+    import json as _json
+    scrubbed = _scrub_pii(obj)
+    return _json.dumps(scrubbed, default=str, ensure_ascii=False).replace("\\u0000", "").replace("\x00", "")
+
+
 def _parse_dt(val):
     """Parse date string to datetime object for asyncpg.
 
@@ -1738,21 +1808,21 @@ async def save_package_to_db(pkg_data: dict, health_score: int, vulns: list = No
                     updated_at = NOW()
                 RETURNING id
             """,
-                pkg_data.get("ecosystem"),
-                pkg_data.get("name"),
-                pkg_data.get("latest_version"),
-                (pkg_data.get("description") or "")[:500],
-                str(pkg_data.get("license") or "")[:100],
-                (pkg_data.get("homepage") or "")[:500],
-                (pkg_data.get("repository") or "")[:500],
+                _sanitize_str(pkg_data.get("ecosystem")),
+                _sanitize_str(pkg_data.get("name")),
+                _sanitize_str(pkg_data.get("latest_version")),
+                _sanitize_str((pkg_data.get("description") or "")[:500]),
+                _sanitize_str(str(pkg_data.get("license") or "")[:100]),
+                _sanitize_str((pkg_data.get("homepage") or "")[:500]),
+                _sanitize_str((pkg_data.get("repository") or "")[:500]),
                 pkg_data.get("downloads_weekly", 0) or 0,
                 _parse_dt(pkg_data.get("first_published")),
                 _parse_dt(pkg_data.get("last_published")),
                 pkg_data.get("maintainers_count", 0),
                 pkg_data.get("deprecated", False),
-                pkg_data.get("deprecated_message"),
+                _sanitize_str(pkg_data.get("deprecated_message")),
                 health_score,
-                json.dumps(pkg_data, default=str),
+                _safe_json_dumps(pkg_data),
             )
 
             # Save vulnerabilities
