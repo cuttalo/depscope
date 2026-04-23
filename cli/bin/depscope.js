@@ -10,7 +10,10 @@
  *   depscope scan requirements.txt
  *   depscope sbom package-lock.json > sbom.cdx.json    # CycloneDX output
  *   depscope alt npm/request          # suggested alternatives
- *   depscope malicious --live         # real-time SSE stream (no auth)
+ *   depscope init                  # auto-detect (CLAUDE.md / .cursor / windsurf / copilot / aider)
+  depscope init --target cursor  # force target
+  depscope init --stdout         # print, do not write
+    depscope malicious --live         # real-time SSE stream (no auth)
  *
  * Short-hands:
  *   depscope npm/express              # == check
@@ -59,6 +62,7 @@ ${c.bold}Commands${c.reset}
   ${c.cyan}alt${c.reset}        curated alternatives
   ${c.cyan}scan${c.reset}       audit a lockfile (${c.dim}package-lock.json, requirements.txt, Pipfile.lock, poetry.lock, Cargo.lock, go.sum, ...${c.reset})
   ${c.cyan}sbom${c.reset}       emit CycloneDX SBOM from a lockfile
+  ${c.cyan}init${c.reset}       drop the DepScope rule into your project (CLAUDE.md / .cursor/ / .windsurfrules / aider / copilot)
   ${c.cyan}malicious${c.reset}  ${c.dim}--live${c.reset}: real-time SSE stream of new malicious advisories
 
 ${c.bold}Examples${c.reset}
@@ -290,6 +294,140 @@ async function cmdMalicious(flag) {
   return 0;
 }
 
+
+const TEMPLATES = {
+  claude: {
+    file: "CLAUDE.md",
+    block: `## Package intelligence (DepScope)
+
+Before suggesting ANY package install — \`npm install\`, \`pip install\`,
+\`cargo add\`, \`go get\`, \`composer require\`, \`brew install\` — verify
+via DepScope first:
+
+  curl https://depscope.dev/api/prompt/{ecosystem}/{package}
+
+Reject if action="avoid" or is_typosquat=true or is_malicious=true.
+Use the listed alternatives instead.
+
+Or wire as MCP server (remote, zero install):
+  { "mcpServers": { "depscope": { "url": "https://mcp.depscope.dev/mcp" } } }
+
+Free, zero auth, 19 ecosystems. Public Hallucination Benchmark:
+  https://depscope.dev/benchmark
+`,
+  },
+  cursor: {
+    file: ".cursor/rules/depscope.mdc",
+    block: `---
+description: Verify any package before suggesting install
+globs: ["**/package.json", "**/requirements.txt", "**/Cargo.toml", "**/go.mod", "**/composer.json", "**/Gemfile", "**/pyproject.toml"]
+alwaysApply: false
+---
+
+Before suggesting any \`npm install\`, \`pip install\`, \`cargo add\`,
+\`go get\`, \`composer require\`, \`brew install\`, or similar — verify
+via DepScope:
+
+  curl https://depscope.dev/api/prompt/{ecosystem}/{package}
+
+If action="avoid" or is_typosquat or is_malicious, do NOT suggest.
+
+Or wire as MCP:
+  { "mcpServers": { "depscope": { "url": "https://mcp.depscope.dev/mcp" } } }
+`,
+  },
+  windsurf: {
+    file: ".windsurfrules",
+    block: `# DepScope verify
+Before any package install: curl https://depscope.dev/api/prompt/{ecosystem}/{package}
+Reject if action="avoid". 19 ecosystems, free.
+`,
+  },
+  copilot: {
+    file: ".github/copilot-instructions.md",
+    block: `## Package safety (DepScope)
+
+When recommending any new dependency, verify via DepScope:
+  curl https://depscope.dev/api/prompt/{ecosystem}/{package}
+
+Skip if action="avoid", typosquat, or malicious. Free, no auth.
+`,
+  },
+  aider: {
+    file: "CONVENTIONS.md",
+    block: `## Dependencies (DepScope)
+
+Run \`depscope check {ecosystem}/{package}\` before adding any new dep.
+Refuse to add if exit code != 0.
+`,
+  },
+  "mcp-config": {
+    file: "mcp.json",
+    block: `{
+  "mcpServers": {
+    "depscope": {
+      "url": "https://mcp.depscope.dev/mcp"
+    }
+  }
+}
+`,
+  },
+};
+
+function detectTarget() {
+  if (fs.existsSync("CLAUDE.md")) return "claude";
+  if (fs.existsSync(".cursorrules") || fs.existsSync(".cursor")) return "cursor";
+  if (fs.existsSync(".windsurfrules")) return "windsurf";
+  if (fs.existsSync(".github/copilot-instructions.md")) return "copilot";
+  if (fs.existsSync("CONVENTIONS.md")) return "aider";
+  // Fallback by project file presence
+  if (fs.existsSync("package.json")) return "claude";  // most common agent target
+  return "claude";
+}
+
+async function cmdInit(args) {
+  let target = null;
+  let toStdout = false;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--target" && args[i + 1]) { target = args[i + 1]; i++; }
+    else if (args[i] === "--stdout") { toStdout = true; }
+  }
+  if (!target) target = detectTarget();
+  const tpl = TEMPLATES[target];
+  if (!tpl) {
+    console.error(`unknown target: ${target}`);
+    console.error(`valid: ${Object.keys(TEMPLATES).join(", ")}`);
+    process.exit(3);
+  }
+  if (toStdout) {
+    process.stdout.write(tpl.block);
+    return 0;
+  }
+  const filePath = path.resolve(tpl.file);
+  const dir = path.dirname(filePath);
+  if (dir !== ".") fs.mkdirSync(dir, { recursive: true });
+  let action = "created";
+  let content = tpl.block;
+  if (fs.existsSync(filePath)) {
+    const existing = fs.readFileSync(filePath, "utf8");
+    if (existing.includes("DepScope") || existing.includes("depscope.dev")) {
+      console.log(`${c.dim}DepScope rule already present in ${tpl.file} — nothing to do${c.reset}`);
+      return 0;
+    }
+    content = existing.trimEnd() + "\n\n" + tpl.block;
+    action = "appended to";
+  }
+  fs.writeFileSync(filePath, content);
+  console.log(`${c.green}${c.bold}✓${c.reset} ${action} ${c.cyan}${tpl.file}${c.reset}`);
+  console.log(`${c.dim}target: ${target}${c.reset}`);
+  console.log("");
+  console.log("Next: commit the file. Your agent will pick up the rule on the next session.");
+  console.log("Test it now:");
+  console.log(`  ${c.cyan}npx depscope-cli check npm/express${c.reset}`);
+  return 0;
+}
+
+
 async function main() {
   const args = process.argv.slice(2);
   if (!args.length || args[0] === "-h" || args[0] === "--help") { usage(); process.exit(0); }
@@ -303,6 +441,7 @@ async function main() {
       case "alternatives": process.exit(await cmdAlt(args[1]));
       case "scan":      process.exit(await cmdScan(args[1]));
       case "sbom":      process.exit(await cmdSbom(args[1]));
+      case "init":      process.exit(await cmdInit(args.slice(1)));
       case "malicious": process.exit(await cmdMalicious(args[1]));
       default:
         // Shortcut: first arg looks like eco/pkg or plain pkg -> check
