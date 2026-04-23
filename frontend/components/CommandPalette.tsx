@@ -20,6 +20,7 @@ const PAGES: PageItem[] = [
   { id: "popular", label: "Popular", hint: "most-searched packages", href: "/popular", kind: "page" },
   { id: "api-docs", label: "API Docs", hint: "endpoints, auth, examples", href: "/api-docs", kind: "page" },
   { id: "benchmark", label: "Hallucination Benchmark", hint: "CC0 dataset + eval harness", href: "/benchmark", kind: "page" },
+  { id: "enterprise", label: "For Enterprise", hint: "SSO, on-prem, SLA — Q1 2027 waitlist", href: "/enterprise", kind: "page" },
   { id: "integrate", label: "Integrate", hint: "add DepScope to your agent", href: "/integrate", kind: "page" },
   { id: "stats", label: "Stats", hint: "live numbers", href: "/stats", kind: "page" },
   { id: "dashboard", label: "Dashboard", hint: "your account", href: "/dashboard", kind: "page" },

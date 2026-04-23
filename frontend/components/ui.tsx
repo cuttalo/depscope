@@ -332,6 +332,7 @@ export function Footer() {
           <div className="flex flex-col gap-1 text-xs">
             <a href="/api-docs" className="hover:text-[var(--accent)] transition">API Documentation</a>
             <a href="/benchmark" className="hover:text-[var(--accent)] transition">Hallucination Benchmark</a>
+            <a href="/enterprise" className="hover:text-[var(--accent)] transition">For Enterprise</a>
             <a href="/docs" className="hover:text-[var(--accent)] transition">Swagger / OpenAPI</a>
             <a href="/popular" className="hover:text-[var(--accent)] transition">Popular Packages</a>
             <a href="/stats" className="hover:text-[var(--accent)] transition">Coverage</a>
