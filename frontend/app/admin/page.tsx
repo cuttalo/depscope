@@ -96,7 +96,7 @@ export default function AdminOverviewPage() {
       </Grid>
 
       <div className="mt-6">
-        <LiveFeed title="Live activity" max={60} />
+        <LiveFeed max={100} />
       </div>
 
       <div className="grid grid-cols-2 gap-4 mt-6">

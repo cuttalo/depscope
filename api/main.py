@@ -48,11 +48,51 @@ _AGENT_PATTERNS = [
     ("tabnine",           re.compile(r"tabnine", re.I)),
     ("zed",               re.compile(r"zed[- ]?(industries|agent)", re.I)),
     ("mcp-generic",       re.compile(r"mcp[/\-]|model[- ]?context[- ]?protocol", re.I)),
-    ("crawler",           re.compile(r"bot|crawl|spider|slurp|mediapartners|googleother|claude_bot|anthropicbot|gptbot|oai-searchbot", re.I)),
+    # Specific bots — surfaced separately from generic "crawler" for UI split.  # PATCH_SPLIT_BOTS_V1
+    ("googlebot",         re.compile(r"googlebot|googleother|mediapartners-google|adsbot-google", re.I)),
+    ("bingbot",           re.compile(r"bingbot|bingpreview", re.I)),
+    ("duckduckbot",       re.compile(r"duckduckbot|duckduckgo[- ]?favicons", re.I)),
+    ("yandexbot",         re.compile(r"yandexbot|yandeximages", re.I)),
+    ("baiduspider",       re.compile(r"baiduspider", re.I)),
+    ("applebot",          re.compile(r"applebot", re.I)),
+    ("facebookbot",       re.compile(r"facebookexternalhit|meta-externalagent", re.I)),
+    ("twitterbot",        re.compile(r"twitterbot|x-clientbot", re.I)),
+    ("linkedinbot",       re.compile(r"linkedinbot", re.I)),
+    ("anthropic-bot",     re.compile(r"anthropicbot|claude_bot|claude-web/1\.0", re.I)),
+    ("openai-bot",        re.compile(r"gptbot|oai-searchbot|chatgpt-user", re.I)),
+    ("perplexity-bot",    re.compile(r"perplexitybot", re.I)),
+    ("ahrefsbot",         re.compile(r"ahrefsbot|semrushbot|mj12bot|dotbot", re.I)),
+    ("crawler",           re.compile(r"bot|crawl|spider|slurp", re.I)),
     ("python-sdk",        re.compile(r"python-openai-sdk|anthropic-python|python/.*aiohttp", re.I)),
     ("browser",           re.compile(r"mozilla/", re.I)),
     ("curl",              re.compile(r"^curl/", re.I)),
 ]
+
+# Classify an agent_client label into a "kind" lane:
+#   agent  = real AI coding agent or SDK
+#   bot    = search/crawler/AI-training bot
+#   human  = interactive (browser) or raw curl
+#   unknown
+_AGENT_KIND = {
+    # agents
+    "claude-code": "agent", "claude-desktop": "agent", "claude-web": "agent",
+    "cursor": "agent", "windsurf": "agent", "continue": "agent", "aider": "agent",
+    "devin": "agent", "copilot": "agent", "chatgpt": "agent", "replit": "agent",
+    "cody": "agent", "tabnine": "agent", "zed": "agent",
+    "mcp-generic": "agent", "python-sdk": "agent",
+    # bots (search + AI-training + SEO)
+    "googlebot": "bot", "bingbot": "bot", "duckduckbot": "bot", "yandexbot": "bot",
+    "baiduspider": "bot", "applebot": "bot",
+    "facebookbot": "bot", "twitterbot": "bot", "linkedinbot": "bot",
+    "anthropic-bot": "bot", "openai-bot": "bot", "perplexity-bot": "bot",
+    "ahrefsbot": "bot", "crawler": "bot",
+    # humans
+    "browser": "human", "curl": "human",
+}
+
+
+def _agent_kind(agent_client: str) -> str:
+    return _AGENT_KIND.get(agent_client or "", "unknown")
 
 
 def _parse_agent_client(user_agent: str) -> str:
@@ -4091,6 +4131,7 @@ def _log_usage(ecosystem: str, package: str, request: Request = None,
             "package": package,
             "endpoint": endpoint or "check",
             "agent": _parse_agent_client(request.headers.get("User-Agent", "") if request else ""),
+            "kind": _agent_kind(_parse_agent_client(request.headers.get("User-Agent", "") if request else "")),
             "country": (request.headers.get("CF-IPCountry", "") if request else "") or None,
             "status": status_code,
             "ms": response_time_ms,

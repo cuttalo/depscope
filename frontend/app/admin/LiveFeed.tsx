@@ -7,6 +7,7 @@ interface LiveEvent {
   package?: string;
   endpoint?: string;
   agent?: string;
+  kind?: "agent" | "bot" | "human" | "unknown";
   country?: string | null;
   status?: number;
   ms?: number | null;
@@ -16,20 +17,58 @@ interface LiveEvent {
   _id: number;
 }
 
+// Fallback mapping client-side if event doesn't include kind (older server).
+const AGENT_SET = new Set([
+  "claude-code", "claude-desktop", "claude-web", "cursor", "windsurf",
+  "continue", "aider", "devin", "copilot", "chatgpt", "replit", "cody",
+  "tabnine", "zed", "mcp-generic", "python-sdk",
+]);
+const BOT_SET = new Set([
+  "googlebot", "bingbot", "duckduckbot", "yandexbot", "baiduspider",
+  "applebot", "facebookbot", "twitterbot", "linkedinbot",
+  "anthropic-bot", "openai-bot", "perplexity-bot", "ahrefsbot", "crawler",
+]);
+const HUMAN_SET = new Set(["browser", "curl"]);
+
+function classify(ev: LiveEvent): "agent" | "bot" | "human" | "unknown" {
+  if (ev.kind) return ev.kind;
+  const a = ev.agent || "";
+  if (AGENT_SET.has(a)) return "agent";
+  if (BOT_SET.has(a)) return "bot";
+  if (HUMAN_SET.has(a)) return "human";
+  return "unknown";
+}
+
 function agentColor(a?: string): string {
   switch (a) {
-    case "claude-code":    return "#d97706";
-    case "cursor":         return "#6366f1";
-    case "windsurf":       return "#06b6d4";
-    case "copilot":        return "#10b981";
-    case "aider":          return "#8b5cf6";
-    case "openai":
-    case "chatgpt":        return "#10a37f";
-    case "anthropic":      return "#d97706";
-    case "crawler":        return "#64748b";
-    case "curl":           return "#94a3b8";
-    case "browser":        return "#3b82f6";
-    default:               return "#64748b";
+    case "claude-code":
+    case "claude-desktop":
+    case "claude-web":
+    case "anthropic-bot":   return "#d97706";
+    case "cursor":          return "#6366f1";
+    case "windsurf":        return "#06b6d4";
+    case "copilot":         return "#10b981";
+    case "aider":           return "#8b5cf6";
+    case "continue":        return "#f59e0b";
+    case "replit":          return "#f26207";
+    case "devin":           return "#a855f7";
+    case "openai-bot":
+    case "chatgpt":         return "#10a37f";
+    case "perplexity-bot":  return "#22d3ee";
+    case "googlebot":       return "#4285f4";
+    case "bingbot":         return "#00809d";
+    case "duckduckbot":     return "#de5833";
+    case "yandexbot":       return "#ffcc00";
+    case "applebot":        return "#999";
+    case "facebookbot":     return "#1877f2";
+    case "twitterbot":      return "#1da1f2";
+    case "linkedinbot":     return "#0a66c2";
+    case "ahrefsbot":       return "#ec4899";
+    case "crawler":         return "#64748b";
+    case "curl":            return "#94a3b8";
+    case "browser":         return "#3b82f6";
+    case "mcp-generic":     return "#8b5cf6";
+    default:                return "#64748b";
   }
 }
 
@@ -51,14 +90,58 @@ function fmtAgo(ts: number, now: number): string {
   return `${Math.floor(diff / 3600)}h`;
 }
 
-export function LiveFeed({ title = "Live activity", max = 50 }: { title?: string; max?: number }) {
+function EventRow({ ev, now }: { ev: LiveEvent; now: number }) {
+  const ago = fmtAgo(ev.ts, now);
+  const isCache = ev.cache_hit;
+  const method = (ev.endpoint || "check").toUpperCase();
+  return (
+    <div
+      className="px-3 py-2 flex items-center gap-2 text-[11px] font-mono hover:bg-[var(--bg-hover)] transition border-b"
+      style={{ borderColor: "var(--border)" }}
+    >
+      <span className="text-[var(--text-faded)] tabular-nums w-7 shrink-0">{ago}</span>
+      <span
+        className="tabular-nums w-8 shrink-0 font-semibold"
+        style={{ color: statusColor(ev.status) }}
+      >
+        {ev.status || "—"}
+      </span>
+      <span className="w-14 shrink-0 text-[var(--text-dim)] uppercase text-[10px]">{method}</span>
+      <span className="flex-1 min-w-0 truncate">
+        {ev.ecosystem && <span className="text-[var(--text-faded)]">{ev.ecosystem}/</span>}
+        <span className="text-[var(--text)]">{ev.package || "—"}</span>
+      </span>
+      <span
+        className="text-[10px] px-1.5 py-0.5 rounded shrink-0"
+        style={{
+          background: `color-mix(in srgb, ${agentColor(ev.agent)} 15%, transparent)`,
+          color: agentColor(ev.agent),
+        }}
+      >
+        {ev.agent || "unknown"}
+      </span>
+      <span className="tabular-nums text-[var(--text-dim)] w-12 shrink-0 text-right">
+        {isCache ? "cache" : (typeof ev.ms === "number" ? `${ev.ms}ms` : "—")}
+      </span>
+    </div>
+  );
+}
+
+function EmptyPane({ msg }: { msg: string }) {
+  return (
+    <div className="px-3 py-8 text-center text-[11px] text-[var(--text-faded)]">
+      {msg}
+    </div>
+  );
+}
+
+export function LiveFeed({ max = 100 }: { max?: number }) {
   const [events, setEvents] = useState<LiveEvent[]>([]);
   const [connected, setConnected] = useState(false);
-  const [count, setCount] = useState(0);
+  const [counts, setCounts] = useState({ agent: 0, bot: 0, human: 0, unknown: 0 });
   const idRef = useRef(0);
   const [now, setNow] = useState(Date.now() / 1000);
 
-  // Tick every second to refresh relative timestamps.
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now() / 1000), 1000);
     return () => clearInterval(t);
@@ -72,11 +155,12 @@ export function LiveFeed({ title = "Live activity", max = 50 }: { title?: string
       try {
         const data = JSON.parse((e as MessageEvent).data) as LiveEvent;
         data._id = ++idRef.current;
+        const kind = classify(data);
         setEvents((prev) => {
           const next = [data, ...prev];
           return next.length > max ? next.slice(0, max) : next;
         });
-        setCount((c) => c + 1);
+        setCounts((c) => ({ ...c, [kind]: c[kind] + 1 }));
       } catch {
         /* ignore bad event */
       }
@@ -85,8 +169,18 @@ export function LiveFeed({ title = "Live activity", max = 50 }: { title?: string
     return () => es.close();
   }, [max]);
 
+  const agentEvents = events.filter((e) => {
+    const k = classify(e);
+    return k === "agent" || k === "human";
+  });
+  const botEvents = events.filter((e) => {
+    const k = classify(e);
+    return k === "bot" || k === "unknown";
+  });
+
   return (
     <div className="rounded-lg overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: "var(--border)" }}>
         <div className="flex items-center gap-2">
           <span className="relative flex h-2 w-2">
@@ -96,85 +190,51 @@ export function LiveFeed({ title = "Live activity", max = 50 }: { title?: string
             />
             <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: connected ? "var(--green)" : "var(--red)" }} />
           </span>
-          <span className="text-sm font-semibold text-[var(--text)]">{title}</span>
+          <span className="text-sm font-semibold text-[var(--text)]">Live activity</span>
           <span className="text-[10px] font-mono text-[var(--text-faded)] uppercase tracking-wider">
             {connected ? "connected" : "reconnecting"}
           </span>
         </div>
-        <div className="text-[11px] text-[var(--text-faded)] font-mono tabular-nums">
-          {count.toLocaleString()} events
+        <div className="flex items-center gap-3 text-[11px] font-mono tabular-nums">
+          <span className="text-[var(--green)]">{counts.agent} agents</span>
+          <span className="text-[var(--text-dim)]">{counts.human} humans</span>
+          <span className="text-[var(--text-faded)]">{counts.bot} bots</span>
         </div>
       </div>
 
-      <div className="max-h-[520px] overflow-y-auto">
-        {events.length === 0 ? (
-          <div className="px-4 py-8 text-center text-xs text-[var(--text-faded)]">
-            Waiting for activity…
+      {/* 2-column split */}
+      <div className="grid grid-cols-2 divide-x" style={{ borderColor: "var(--border)" }}>
+        {/* LEFT: Agents + humans */}
+        <div className="min-w-0" style={{ borderColor: "var(--border)" }}>
+          <div className="px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider flex items-center justify-between border-b"
+               style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--green) 5%, transparent)", color: "var(--green)" }}>
+            <span>AI Agents · Humans</span>
+            <span className="tabular-nums">{agentEvents.length}</span>
           </div>
-        ) : (
-          <div className="divide-y" style={{ borderColor: "var(--border)" }}>
-            {events.map((ev) => {
-              const ago = fmtAgo(ev.ts, now);
-              const isCache = ev.cache_hit;
-              const method = (ev.endpoint || "check").toUpperCase();
-              const fullPath = ev.ecosystem && ev.package
-                ? `${ev.ecosystem}/${ev.package}`
-                : (ev.ecosystem || "");
-              return (
-                <div
-                  key={ev._id}
-                  className="px-4 py-2 flex items-center gap-3 text-xs font-mono hover:bg-[var(--bg-hover)] transition"
-                  style={{ borderColor: "var(--border)" }}
-                >
-                  {/* time */}
-                  <span className="text-[var(--text-faded)] tabular-nums w-10 shrink-0">{ago}</span>
-
-                  {/* status */}
-                  <span
-                    className="tabular-nums w-8 shrink-0 font-semibold"
-                    style={{ color: statusColor(ev.status) }}
-                  >
-                    {ev.status || "—"}
-                  </span>
-
-                  {/* endpoint */}
-                  <span className="w-16 shrink-0 text-[var(--text-dim)] uppercase text-[10px]">{method}</span>
-
-                  {/* path */}
-                  <span className="flex-1 min-w-0 truncate">
-                    {ev.ecosystem && (
-                      <span className="text-[var(--text-faded)]">{ev.ecosystem}/</span>
-                    )}
-                    <span className="text-[var(--text)]">{ev.package || "—"}</span>
-                  </span>
-
-                  {/* agent */}
-                  <span
-                    className="text-[10px] px-1.5 py-0.5 rounded shrink-0"
-                    style={{
-                      background: `color-mix(in srgb, ${agentColor(ev.agent)} 15%, transparent)`,
-                      color: agentColor(ev.agent),
-                    }}
-                  >
-                    {ev.agent || "unknown"}
-                  </span>
-
-                  {/* response ms or cache flag */}
-                  <span className="tabular-nums text-[var(--text-dim)] w-14 shrink-0 text-right">
-                    {isCache ? "cache" : (typeof ev.ms === "number" ? `${ev.ms}ms` : "—")}
-                  </span>
-
-                  {/* country */}
-                  {ev.country && (
-                    <span className="text-[10px] text-[var(--text-faded)] w-6 shrink-0 text-right">
-                      {ev.country}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+          <div className="max-h-[520px] overflow-y-auto">
+            {agentEvents.length === 0 ? (
+              <EmptyPane msg="Waiting for agent traffic…" />
+            ) : (
+              agentEvents.map((ev) => <EventRow key={ev._id} ev={ev} now={now} />)
+            )}
           </div>
-        )}
+        </div>
+
+        {/* RIGHT: Bots / crawlers */}
+        <div className="min-w-0" style={{ borderColor: "var(--border)" }}>
+          <div className="px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider flex items-center justify-between border-b"
+               style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--text-faded) 8%, transparent)", color: "var(--text-dim)" }}>
+            <span>Bots · Crawlers</span>
+            <span className="tabular-nums">{botEvents.length}</span>
+          </div>
+          <div className="max-h-[520px] overflow-y-auto">
+            {botEvents.length === 0 ? (
+              <EmptyPane msg="No bot traffic yet." />
+            ) : (
+              botEvents.map((ev) => <EventRow key={ev._id} ev={ev} now={now} />)
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
