@@ -120,9 +120,9 @@ export default function PrivacyPage() {
 
       <Sec id="retention" title="5. Retention periods">
         <ul className="list-disc ml-6 space-y-1">
-          <li>Raw IP addresses: <Strong>24 hours</Strong>, then hashed</li>
+          <li>Raw IP addresses: <Strong>never stored on disk</Strong> — SHA-256+salt hashed at request time; only the hash is persisted</li>
           <li>
-            API access logs (hashed): <Strong>180 days</Strong>, then aggregated
+            API access logs (hashed IP only): <Strong>30 days</Strong>, then aggregated
             and anonymized
           </li>
           <li>Magic-link tokens: <Strong>15 minutes</Strong></li>
@@ -204,6 +204,15 @@ export default function PrivacyPage() {
           respond within 30 days (extendable to 90 for complex requests — art.
           12 GDPR). Exercising rights is free; we may charge a reasonable fee
           only for manifestly unfounded or excessive requests.
+        </p>
+        <p className="mt-2">
+          <Strong>Instant self-service for API callers:</Strong> to erase or
+          export the usage rows tied to your current IP hash, use{" "}
+          <A href="/api/gdpr/delete">POST /api/gdpr/delete</A> or{" "}
+          <A href="/api/gdpr/export">GET /api/gdpr/export</A>. No account, no
+          wait: the server hashes your IP, matches rows, and acts immediately.
+          Machine-readable policy summary at{" "}
+          <A href="/api/gdpr/policy">/api/gdpr/policy</A>.
         </p>
       </Sec>
 
