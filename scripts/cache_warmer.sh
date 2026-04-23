@@ -3,9 +3,12 @@
 # last 7 days. First request after cache-miss pays ~800ms; after this
 # cron, top packages stay HIT (~20-50ms) for the next 6h.
 #
-# Rate-limited: 1 req/sec (safe under CF no-challenge threshold).
+# Warms both gzip and brotli variants (CF caches per Accept-Encoding).
+#
+# Rate-limited: ~0.5s between packages (safe under CF no-challenge threshold).
 # Strategy: hit each of /api/check, /api/prompt, /api/latest for each
-# top pkg so the three most-used endpoints stay warm.
+# top pkg × {gzip, br} so all three most-used endpoints stay warm
+# for both encoding variants.
 #
 # Scheduled: cron daily 04:30 UTC (after top-200 selection is stable
 # from today's usage).
@@ -34,18 +37,22 @@ PKG_LIST=$(sudo -u postgres psql depscope -tAc "
 ")
 
 COUNT=$(echo "$PKG_LIST" | grep -c '|' || true)
-log "warming $COUNT packages on /api/check + /api/prompt + /api/latest"
+log "warming $COUNT packages on /api/check + /api/prompt + /api/latest × {gzip, br}"
 
 SUCC=0
 MISS=0
 while IFS='|' read -r eco pkg; do
   [ -z "$eco" ] && continue
   for ep in check prompt latest; do
-    code=$(curl -s -o /dev/null -w '%{http_code}' \
-           --compressed --max-time 10 \
-           -H "User-Agent: DepScope-CacheWarmer/1.0" \
-           "https://depscope.dev/api/$ep/$eco/$pkg" || echo "000")
-    if [ "$code" = "200" ]; then SUCC=$((SUCC+1)); else MISS=$((MISS+1)); fi
+    # Warm both gzip and brotli variants — CF caches per Accept-Encoding.
+    for enc in "gzip" "br"; do
+      code=$(curl -s -o /dev/null -w '%{http_code}' \
+             --max-time 10 \
+             -H "Accept-Encoding: $enc" \
+             -H "User-Agent: DepScope-CacheWarmer/1.0" \
+             "https://depscope.dev/api/$ep/$eco/$pkg" || echo "000")
+      if [ "$code" = "200" ]; then SUCC=$((SUCC+1)); else MISS=$((MISS+1)); fi
+    done
   done
   sleep 0.5
 done <<< "$PKG_LIST"

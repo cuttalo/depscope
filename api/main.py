@@ -185,11 +185,49 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    max_age=86400,
 )
 
 # Response compression (gzip) for any payload > 500 bytes.
 # Agents save ~60-80% bytes on /api/check (2.8KB -> ~900B).
 app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
+
+# ─── Origin Cache-Control headers (CF honours them) ─────────────────
+# Static/immutable-ish GETs keyed on ecosystem/package: 1h at edge,
+# stale-while-revalidate another 6h so agents NEVER wait on a refresh.
+# Dynamic endpoints (stats/trending/gdpr/auth/admin) stay uncached.
+import re as _re
+_CACHEABLE_PATH = _re.compile(
+    r'^/api/('
+    r'check|prompt|latest|vulns|alternatives|breaking|bugs|compare|'
+    r'typosquat|malicious|install|license|licenses|exists|tree|versions|'
+    r'maintainers|quality|provenance|scorecard|pin_safe|history|'
+    r'migration|health|ai/brief'
+    r')(/.*)?$'
+)
+_UNCACHEABLE_PATH = _re.compile(
+    r'^/api/(stats|trending|gdpr|auth|admin|contact|anomaly|track|error|scan|compat|now|ecosystems|search|savings|translate)(/.*)?$'
+)
+
+@app.middleware("http")
+async def _origin_cache_control(request, call_next):
+    resp = await call_next(request)
+    try:
+        if (request.method == "GET"
+                and 200 <= resp.status_code < 300
+                and "cache-control" not in {k.lower() for k in resp.headers.keys()}):
+            path = request.url.path
+            if _UNCACHEABLE_PATH.match(path):
+                resp.headers["Cache-Control"] = "no-store"
+            elif _CACHEABLE_PATH.match(path):
+                # 1h fresh + 6h stale-while-revalidate — CF serves instantly
+                # while revalidating in background.
+                resp.headers["Cache-Control"] = "public, max-age=3600, stale-while-revalidate=21600"
+    except Exception:
+        pass
+    return resp
+
+
 
 app.include_router(auth_router)
 app.include_router(payments_router)
