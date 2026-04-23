@@ -599,6 +599,88 @@ def _has_admin_pw(request: Request) -> bool:
         return False
     return request.cookies.get(_ADMIN_PW_COOKIE) == _admin_pw_token()
 
+
+
+# ─── Live event stream (SSE for admin dashboard) ────────────────────  # PATCH_LIVE_FEED_V1
+# Publishes every api_usage insert to Redis pub/sub "depscope:live"; admin
+# subscribes via /api/admin/live and receives JSON events in real time.
+
+from fastapi.responses import StreamingResponse as _StreamingResponse
+
+async def _publish_live_event(event: dict):
+    """Push a live event to Redis pub/sub. Silent on any failure."""
+    try:
+        from api.cache import get_redis
+        r = await get_redis()
+        await r.publish("depscope:live", __import__("json").dumps(event, default=str))
+    except Exception:
+        pass
+
+
+@app.get("/api/admin/live", include_in_schema=False)
+async def admin_live(request: Request):
+    """SSE stream of real-time API activity. Admin-auth-gated.
+
+    Each event is a JSON line preceded by `data: ` per SSE spec. The
+    client (EventSource) receives:
+      - `event: api_call` with {ecosystem, package, endpoint, agent, ms, status, country}
+      - `event: ping` every 20s to keep connection alive
+
+    The stream runs until the client disconnects or 30min have passed
+    (then client auto-reconnects). Nginx+CF forwarding: no buffering.
+    """
+    if not _has_admin_pw(request):
+        user = await _get_user_from_request(request)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(403, "Admin only")
+
+    async def event_gen():
+        from api.cache import get_redis
+        import asyncio as _asyncio, json as _json, time as _time
+        r = await get_redis()
+        pubsub = r.pubsub()
+        try:
+            await pubsub.subscribe("depscope:live")
+            # Initial hello
+            yield f"event: hello\ndata: {_json.dumps({'ok': True, 'ts': _time.time()})}\n\n"
+            last_ping = _time.time()
+            start = _time.time()
+            while True:
+                # Max 30 min per connection — EventSource auto-reconnects.
+                if _time.time() - start > 1800:
+                    yield "event: bye\ndata: {\"reason\":\"max_duration\"}\n\n"
+                    return
+                # Periodic ping so CF/nginx don't close the idle connection.
+                if _time.time() - last_ping > 20:
+                    yield f"event: ping\ndata: {int(_time.time())}\n\n"
+                    last_ping = _time.time()
+                try:
+                    msg = await _asyncio.wait_for(pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0), timeout=1.5)
+                except _asyncio.TimeoutError:
+                    msg = None
+                if msg and msg.get("type") == "message":
+                    payload = msg.get("data")
+                    if isinstance(payload, bytes):
+                        payload = payload.decode("utf-8", "replace")
+                    yield f"event: api_call\ndata: {payload}\n\n"
+        finally:
+            try:
+                await pubsub.unsubscribe("depscope:live")
+                await pubsub.close()
+            except Exception:
+                pass
+
+    return _StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # disables nginx buffering
+        },
+    )
+
+
 @app.post("/api/admin/unlock", include_in_schema=False)
 async def admin_unlock(request: Request):
     if not _ADMIN_PW:
@@ -4001,6 +4083,23 @@ def _log_usage(ecosystem: str, package: str, request: Request = None,
                     )
         except Exception:
             pass
+    # Real-time admin feed — non-blocking.  # PATCH_LIVE_FEED_V1
+    try:
+        import asyncio as _aio
+        _aio.create_task(_publish_live_event({
+            "ecosystem": ecosystem,
+            "package": package,
+            "endpoint": endpoint or "check",
+            "agent": _parse_agent_client(request.headers.get("User-Agent", "") if request else ""),
+            "country": (request.headers.get("CF-IPCountry", "") if request else "") or None,
+            "status": status_code,
+            "ms": response_time_ms,
+            "cache_hit": cache_hit,
+            "mcp_tool": (request.headers.get("X-MCP-Tool", "") if request else None) or None,
+            "ts": __import__("time").time(),
+        }))
+    except Exception:
+        pass
     asyncio.create_task(_log())
 
 

@@ -5,6 +5,7 @@ import {
   LineChart, Line, BarChart, Bar,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
+import { LiveFeed } from "./LiveFeed";
 
 export default function AdminOverviewPage() {
   const s = useAdminMany<{
@@ -93,6 +94,10 @@ export default function AdminOverviewPage() {
                     sub={`${num(calls30d)} last 30d`} /></Card>
         <Card><Stat label="MCP tools"       value={stats.mcp_tools ?? "—"} sub="v0.6.x" /></Card>
       </Grid>
+
+      <div className="mt-6">
+        <LiveFeed title="Live activity" max={60} />
+      </div>
 
       <div className="grid grid-cols-2 gap-4 mt-6">
         <Card title="API calls per day (30d)">
