@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import SavingsCounter from "./savings-counter";
 import {
   Card,
   CardBody,
@@ -351,8 +350,7 @@ export default function Home() {
             <span className="text-[var(--accent)]">Ship safer code.</span>
           </h1>
           <p className="text-sm md:text-base text-[var(--text-dim)] mb-4 max-w-xl mx-auto leading-relaxed">
-            One API for package health across {stats?.ecosystems?.length || 17} ecosystems
-            {stats?.packages_indexed ? <> · <span className="tabular-nums text-[var(--text)]">{stats.packages_indexed.toLocaleString()}</span> packages</> : null}.
+            One API for package health across {stats?.ecosystems?.length || 17} ecosystems.
             Cached for every AI agent. Free, no auth.
           </p>
           <div className="flex flex-wrap justify-center gap-2 mb-8 text-xs font-mono">
@@ -418,11 +416,7 @@ export default function Home() {
             <span>·</span>
             <span className="tabular-nums"><span className="text-[var(--text-dim)]">{stats?.ecosystems?.length || 17}</span> ecosystems</span>
             <span>·</span>
-            <span className="tabular-nums"><span className="text-[var(--text-dim)]">{stats?.packages_indexed?.toLocaleString() || "390,000+"}</span> packages</span>
-            <span>·</span>
-            <span className="tabular-nums"><span className="text-[var(--text-dim)]">{stats?.vulnerabilities_tracked?.toLocaleString() ?? "7,300+"}</span> vulnerabilities</span>
-            <span>·</span>
-            <span className="text-[var(--green)]">Free</span>
+            <span className="text-[var(--green)]">Free · no auth</span>
           </div>
         </header>
 
@@ -672,45 +666,8 @@ export default function Home() {
         {/* === LANDING === */}
         {!result && (
           <div className="pb-12 space-y-12">
-            {/* KPI strip */}
-            <Section>
-              <Card>
-                <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-[var(--border)]">
-                  <div className="p-5">
-                    <Stat
-                      value={stats?.packages_indexed?.toLocaleString() || "390,000+"}
-                      label="Packages indexed"
-                    />
-                  </div>
-                  <div className="p-5">
-                    <Stat
-                      value={stats?.ecosystems?.length || 17}
-                      label="Ecosystems"
-                      color="var(--green)"
-                    />
-                  </div>
-                  <div className="p-5">
-                    <Stat
-                      value={stats?.vulnerabilities_tracked?.toLocaleString() || "7,300+"}
-                      label="Vulnerabilities"
-                      color="var(--red)"
-                    />
-                  </div>
-                  <div className="p-5">
-                    <Stat
-                      value={stats?.mcp_tools ?? 22}
-                      label="MCP tools"
-                      color="var(--accent)"
-                    />
-                  </div>
-                </div>
-              </Card>
-            </Section>
-
-            {/* Live agent intel */}
-            {(stats?.intel?.hallucinations_week !== undefined ||
-              (stats?.intel?.top_hallucinated && stats.intel.top_hallucinated.length > 0) ||
-              (stats?.intel?.agents_breakdown && stats.intel.agents_breakdown.length > 0)) && (
+            {/* Live agent intel — gated: only show once numbers are consistent (threshold raised so low counts don't undermine credibility). */}
+            {((stats?.intel?.hallucinations_week ?? 0) >= 5000) && (
               <Section
                 title="Live agent intel"
                 description="What AI agents asked about this week. Aggregated, anonymous, refreshed in real time."
@@ -849,51 +806,6 @@ export default function Home() {
                     <h3 className="font-medium text-sm mb-1.5">One API call. Done.</h3>
                     <p className="text-xs text-[var(--text-dim)] leading-relaxed">
                       Health score, vulnerabilities, recommendation. {stats?.ecosystems?.length || 17} ecosystems. Cached. Free. No auth.
-                    </p>
-                  </CardBody>
-                </Card>
-              </div>
-            </Section>
-
-            {/* Three savings */}
-            <Section title="What DepScope saves">
-              <div className="grid md:grid-cols-3 gap-3">
-                <Card>
-                  <CardBody>
-                    <div className="text-[11px] font-mono uppercase tracking-wider text-[var(--blue)] mb-2">
-                      Tokens
-                    </div>
-                    <div className="text-2xl font-semibold tabular-nums text-[var(--text)] mb-2">
-                      ~92%
-                    </div>
-                    <p className="text-xs text-[var(--text-dim)] leading-relaxed">
-                      ~3K tokens per npm/PyPI JSON parse collapses to &lt;100 tokens of structured answer.
-                    </p>
-                  </CardBody>
-                </Card>
-                <Card>
-                  <CardBody>
-                    <div className="text-[11px] font-mono uppercase tracking-wider text-[var(--orange)] mb-2">
-                      Energy
-                    </div>
-                    <div className="text-2xl font-semibold tabular-nums text-[var(--text)] mb-2">
-                      1 fetch · N agents
-                    </div>
-                    <p className="text-xs text-[var(--text-dim)] leading-relaxed">
-                      Shared cache serves thousands. Less compute, bandwidth, CO2 on public registries.
-                    </p>
-                  </CardBody>
-                </Card>
-                <Card>
-                  <CardBody>
-                    <div className="text-[11px] font-mono uppercase tracking-wider text-[var(--red)] mb-2">
-                      Security
-                    </div>
-                    <div className="text-2xl font-semibold tabular-nums text-[var(--text)] mb-2">
-                      {stats?.vulnerabilities_tracked?.toLocaleString() || "400+"}
-                    </div>
-                    <p className="text-xs text-[var(--text-dim)] leading-relaxed">
-                      Vulnerabilities tracked, filtered to latest version. Plus transitive deps, license, deprecation.
                     </p>
                   </CardBody>
                 </Card>
@@ -1111,29 +1023,6 @@ PACKAGES:
                   </div>
                 </CardBody>
               </Card>
-            </Section>
-
-            {/* Ecosystems grid */}
-            <Section title="Ecosystems">
-              <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-                {availableEcosystems.map((eco) => (
-                  <a
-                    key={eco}
-                    href={`/ecosystems/${eco}`}
-                    className="p-3 rounded border border-[var(--border)] bg-[var(--bg-card)] hover:border-[var(--accent)]/40 hover:bg-[var(--bg-hover)] transition text-center"
-                  >
-                    <div className="font-mono text-sm text-[var(--text)]">
-                      {ECOSYSTEM_LABELS[eco] || eco}
-                    </div>
-                    <div className="text-[10px] text-[var(--text-dim)] mt-0.5">Browse</div>
-                  </a>
-                ))}
-              </div>
-            </Section>
-
-            {/* Efficiency by design */}
-            <Section title="Built for efficiency">
-              <SavingsCounter />
             </Section>
 
             {/* Footer CTA */}
