@@ -1,0 +1,40 @@
+{
+  "name": "depscope-cli",
+  "version": "0.1.0",
+  "description": "Check any package across 19 ecosystems (npm, PyPI, Cargo, Go, JSR, Julia, ...) — free, zero auth, agent-ready. One command before every install.",
+  "bin": {
+    "depscope": "./bin/depscope.js"
+  },
+  "main": "./bin/depscope.js",
+  "type": "commonjs",
+  "keywords": [
+    "depscope",
+    "package",
+    "health",
+    "vulnerability",
+    "security",
+    "supply-chain",
+    "ai-agent",
+    "mcp",
+    "dependency",
+    "audit",
+    "typosquat",
+    "hallucination"
+  ],
+  "author": "DepScope (Cuttalo srl)",
+  "license": "MIT",
+  "homepage": "https://depscope.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cuttalo/depscope.git",
+    "directory": "cli"
+  },
+  "bugs": "https://depscope.dev/contact",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/",
+    "README.md"
+  ]
+}
