@@ -827,6 +827,133 @@ async def live_malicious_feed(request: Request):
     )
 
 
+
+
+# ─── Hallucination Benchmark v1 (public) ────────────────────────────  # PATCH_BENCHMARK_V1
+# Public corpus of known-hallucinated package names from real agent
+# sessions + research + pattern analysis. Auto-expanded daily from
+# our own api_usage is_hallucination observations.
+#
+# Use cases:
+#   - Agent vendors can run their model against the corpus + measure
+#     hallucination rate (with vs without DepScope MCP).
+#   - Researchers can cite the dataset.
+#   - Lab safety teams can track trends.
+
+@app.get("/api/benchmark/hallucinations", tags=["discover"])
+async def benchmark_hallucinations_corpus(ecosystem: str = None, limit: int = 500):
+    """Return the full hallucination corpus as JSON, sorted by hit_count desc.
+
+    Query params:
+      ?ecosystem=npm   (filter to one ecosystem)
+      ?limit=100       (1..1000)
+    """
+    limit = max(1, min(1000, int(limit or 500)))
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        if ecosystem:
+            rows = await conn.fetch(
+                """SELECT ecosystem, package_name, source, evidence,
+                          first_seen_at, hit_count, likely_real_alternative
+                   FROM benchmark_hallucinations
+                   WHERE ecosystem = $1
+                   ORDER BY hit_count DESC, ecosystem, package_name
+                   LIMIT $2""",
+                ecosystem.lower(), limit,
+            )
+        else:
+            rows = await conn.fetch(
+                """SELECT ecosystem, package_name, source, evidence,
+                          first_seen_at, hit_count, likely_real_alternative
+                   FROM benchmark_hallucinations
+                   ORDER BY hit_count DESC, ecosystem, package_name
+                   LIMIT $1""",
+                limit,
+            )
+        total = await conn.fetchval("SELECT COUNT(*) FROM benchmark_hallucinations")
+    return {
+        "version": "1.0",
+        "total_corpus_size": total,
+        "returned": len(rows),
+        "ecosystem_filter": ecosystem,
+        "description": "Known hallucinated package names from real coding-agent sessions, supplemented with research-documented patterns. Use to benchmark agent hallucination rates with vs without DepScope. Updated daily.",
+        "schema": {
+            "ecosystem": "one of 18 supported registries",
+            "package_name": "the name the agent hallucinated",
+            "source": "observed (real agent traffic) | research (public literature) | pattern (algorithmic)",
+            "evidence": "short prose describing why this entry was added",
+            "first_seen_at": "ISO8601 timestamp",
+            "hit_count": "how many times our API saw a 404 for this name",
+            "likely_real_alternative": "the actual package an agent probably meant",
+        },
+        "attribution_required": False,
+        "license": "CC0 — public domain",
+        "canonical_url": "https://depscope.dev/api/benchmark/hallucinations",
+        "entries": [
+            {
+                "ecosystem": r["ecosystem"],
+                "package_name": r["package_name"],
+                "source": r["source"],
+                "evidence": r["evidence"],
+                "first_seen_at": r["first_seen_at"].isoformat() if r["first_seen_at"] else None,
+                "hit_count": r["hit_count"],
+                "likely_real_alternative": r["likely_real_alternative"],
+            }
+            for r in rows
+        ],
+    }
+
+
+@app.get("/api/benchmark/verify", tags=["discover"])
+async def benchmark_verify(ecosystem: str, package: str):
+    """Check whether a given (ecosystem, package) is in the hallucination corpus.
+
+    Useful for:
+      - Benchmark runners: verify an agent's output
+      - Agent evaluation harnesses: label outputs
+
+    Returns {is_hallucinated, in_corpus, in_registry, verdict, evidence,
+             likely_real_alternative}.
+
+    is_hallucinated = in_corpus AND NOT in_registry.
+    """
+    ecosystem = ecosystem.lower()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT source, evidence, hit_count, likely_real_alternative
+               FROM benchmark_hallucinations
+               WHERE ecosystem = $1 AND LOWER(package_name) = LOWER($2)""",
+            ecosystem, package,
+        )
+        # Check if exists in our registry mirror
+        in_reg = await conn.fetchval(
+            "SELECT 1 FROM packages WHERE ecosystem=$1 AND LOWER(name)=LOWER($2) LIMIT 1",
+            ecosystem, package,
+        )
+    in_corpus = row is not None
+    in_registry = bool(in_reg)
+    is_hallu = in_corpus and not in_registry
+
+    verdict = (
+        "hallucinated" if is_hallu
+        else "ambiguous" if in_corpus and in_registry
+        else "safe_name" if in_registry
+        else "unknown"
+    )
+    return {
+        "ecosystem": ecosystem,
+        "package": package,
+        "is_hallucinated": is_hallu,
+        "in_corpus": in_corpus,
+        "in_registry": in_registry,
+        "verdict": verdict,
+        "evidence": row["evidence"] if row else None,
+        "source": row["source"] if row else None,
+        "hit_count": row["hit_count"] if row else 0,
+        "likely_real_alternative": row["likely_real_alternative"] if row else None,
+    }
+
 @app.post("/api/admin/unlock", include_in_schema=False)
 async def admin_unlock(request: Request):
     if not _ADMIN_PW:
