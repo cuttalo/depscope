@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import SavingsCounter from "../savings-counter";
 
 interface HealthBreakdown {
   maintenance: number;
@@ -520,7 +519,7 @@ export default function ZhHome() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="card p-5 text-center">
                 <div className="text-xl md:text-3xl font-bold text-[var(--accent)]">
-                  {stats?.packages_indexed?.toLocaleString() || "14,744"}
+                  {stats?.packages_indexed?.toLocaleString() || "390,000+"}
                 </div>
                 <div className="text-xs text-[var(--text-dim)] mt-1">已索引包</div>
               </div>
@@ -574,7 +573,7 @@ export default function ZhHome() {
                 <div className="text-3xl mb-3">{String.fromCodePoint(0x1F512)}</div>
                 <h3 className="font-bold text-lg mb-2">安全</h3>
                 <p className="text-sm text-[var(--text-dim)] leading-relaxed mb-3">
-                  追踪 {stats?.vulnerabilities_tracked?.toLocaleString() || "400"}+ 漏洞，仅过滤最新版本。加上传递依赖、许可证审计、弃用警报。
+                  追踪 {stats?.vulnerabilities_tracked?.toLocaleString() || "7,300"}+ 漏洞，仅过滤最新版本。加上传递依赖、许可证审计、弃用警报。
                 </p>
                 <div className="text-xs font-mono text-[var(--accent)]">不只是噪音</div>
               </div>
@@ -694,7 +693,6 @@ export default function ZhHome() {
 
           {/* === LIVE SAVINGS COUNTER === */}
           <div className="mb-8 md:mb-12 max-w-5xl mx-auto">
-            <SavingsCounter />
           </div>
 
           {/* === FOR AI AGENTS (Chinese specific) === */}
