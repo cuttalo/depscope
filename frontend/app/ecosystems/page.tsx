@@ -14,11 +14,11 @@ interface StatsResponse {
 export const metadata: Metadata = {
   title: "Ecosystems — DepScope",
   description:
-    "Browse package intelligence across 17 registries: npm, PyPI, Cargo, Go, Maven, NuGet, RubyGems, Composer, Pub, Hex, Swift, CocoaPods, CPAN, Hackage, CRAN, Conda, Homebrew. Free, zero-auth, 390K+ packages indexed.",
+    "Browse package intelligence across 17 registries: npm, PyPI, Cargo, Go, Maven, NuGet, RubyGems, Composer, Pub, Hex, Swift, CocoaPods, CPAN, Hackage, CRAN, Conda, Homebrew. Free, zero-auth. Agent-ready.",
   alternates: { canonical: "https://depscope.dev/ecosystems" },
   openGraph: {
     title: "Ecosystems — DepScope",
-    description: "17 package registries, 390K+ packages, free package intelligence for AI agents.",
+    description: "17 package registries, free package intelligence for AI agents.",
     url: "https://depscope.dev/ecosystems",
   },
 };
@@ -88,9 +88,9 @@ export default async function EcosystemsIndex() {
         <header className="mb-8">
           <h1 className="text-3xl font-semibold tracking-tight">Ecosystems</h1>
           <p className="mt-2 text-sm text-[var(--text-dim)] max-w-2xl">
-            DepScope indexes {total.toLocaleString()} packages across {rows.length} registries.
-            All free, zero-auth. Health score, vulnerabilities, deprecation signals, and curated
-            alternatives for each.
+            DepScope indexes {rows.length} package registries. All free, zero-auth.
+            Health score, vulnerabilities, deprecation signals, and curated alternatives
+            for each.
           </p>
         </header>
 
@@ -116,11 +116,10 @@ export default async function EcosystemsIndex() {
                     </div>
                     <div className="text-xs text-[var(--text-faded)] mt-1">{L.language}</div>
                   </div>
-                  <div className="text-right tabular-nums">
-                    <div className="text-sm font-mono">
-                      {r.packages.toLocaleString()}
-                    </div>
-                    <div className="text-[11px] text-[var(--text-faded)]">pkgs</div>
+                  <div className="text-right text-[var(--text-faded)]">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <polyline points="9 18 15 12 9 6"/>
+                    </svg>
                   </div>
                 </div>
               </Link>

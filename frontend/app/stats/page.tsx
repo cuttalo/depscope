@@ -68,12 +68,6 @@ export default function StatsPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-[var(--border)]">
               <div className="p-5">
                 <Stat
-                  value={stats.packages_indexed?.toLocaleString() || "—"}
-                  label="Packages indexed"
-                />
-              </div>
-              <div className="p-5">
-                <Stat
                   value={ecosystemsList.length || 17}
                   label="Ecosystems"
                   color="var(--green)"
@@ -81,16 +75,22 @@ export default function StatsPage() {
               </div>
               <div className="p-5">
                 <Stat
-                  value={stats.vulnerabilities_tracked?.toLocaleString() || "—"}
-                  label="Vulnerabilities tracked"
+                  value={stats.mcp_tools ?? 22}
+                  label="MCP tools"
+                  color="var(--accent)"
+                />
+              </div>
+              <div className="p-5">
+                <Stat
+                  value={"OSV"}
+                  label="Vulnerability source"
                   color="var(--red)"
                 />
               </div>
               <div className="p-5">
                 <Stat
-                  value={stats.mcp_tools ?? 29}
-                  label="MCP tools"
-                  color="var(--accent)"
+                  value={"KEV·EPSS"}
+                  label="Threat intel"
                 />
               </div>
             </div>
@@ -100,25 +100,22 @@ export default function StatsPage() {
         {/* Coverage grid */}
         {sortedEcosystems.length > 0 && (
           <Section
-            title="Coverage by ecosystem"
-            description="Packages indexed per registry"
+            title="Ecosystem coverage"
+            description="Registries indexed — expanding continuously"
             className="mt-8"
           >
             <Card>
-              <div className="grid grid-cols-2 md:grid-cols-3 divide-x divide-y divide-[var(--border)]">
+              <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-y divide-[var(--border)]">
                 {sortedEcosystems.map((eco) => (
                   <a
                     key={eco}
                     href={`/ecosystems/${eco}`}
-                    className="p-4 hover:bg-[var(--bg-hover)] transition"
+                    className="p-4 hover:bg-[var(--bg-hover)] transition flex items-center justify-between"
                   >
-                    <div className="font-mono text-sm text-[var(--accent)]">
+                    <span className="font-mono text-sm text-[var(--accent)]">
                       {ECOSYSTEM_LABELS[eco] || eco}
-                    </div>
-                    <div className="text-lg font-semibold tabular-nums mt-1">
-                      {(ecosystemCounts[eco] || 0).toLocaleString()}
-                    </div>
-                    <div className="text-[11px] text-[var(--text-dim)]">packages</div>
+                    </span>
+                    <span className="text-[var(--text-faded)]">→</span>
                   </a>
                 ))}
               </div>

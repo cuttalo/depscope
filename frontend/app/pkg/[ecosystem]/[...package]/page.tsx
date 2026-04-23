@@ -54,6 +54,20 @@ interface PackageData {
   latest_version: string;
   description: string;
   license: string;
+  license_risk?: "permissive" | "weak_copyleft" | "strong_copyleft" | "network_copyleft" | "proprietary" | "unknown";
+  commercial_use_notes?: string;
+  historical_compromise?: {
+    count: number;
+    matches_current_version: boolean;
+    incidents: Array<{
+      affected_versions: string;
+      incident_type: string;
+      year: number;
+      summary: string;
+      refs: string[];
+      matches_current_version: boolean;
+    }>;
+  };
   homepage: string;
   repository: string;
   downloads_weekly: number;
@@ -353,8 +367,8 @@ export default async function PackagePage({ params }: Props) {
   const topAlt = (similar && similar[0]) ? similar[0].name : null;
   const lastPub = data.metadata?.last_published ? String(data.metadata.last_published).slice(0, 10) : "";
   const safetyAnswer = vulnCount > 0
-    ? data.package + " has " + vulnCount + " known vulnerabilities on the latest version (" + data.latest_version + "). DepScope rates its health at " + score + "/100 (" + data.health.risk + " risk)."
-    : data.package + " has no known vulnerabilities on the latest version (" + data.latest_version + "). DepScope rates its health at " + score + "/100 (" + data.health.risk + " risk).";
+    ? data.package + " has " + vulnCount + " known vulnerabilities on the latest version (" + data.latest_version + "). DepScope rates its health at " + score + "/100 (" + (data.health?.risk || "unknown") + " risk)."
+    : data.package + " has no known vulnerabilities on the latest version (" + data.latest_version + "). DepScope rates its health at " + score + "/100 (" + (data.health?.risk || "unknown") + " risk).";
   const deprecatedAnswer = isDeprecated
     ? "Yes, " + data.package + " is deprecated" + (data.metadata?.deprecated_message ? ": " + data.metadata.deprecated_message : ".") + (topAlt ? " Consider using " + topAlt + " instead." : "")
     : "No, " + data.package + " is actively maintained. Latest release: " + data.latest_version + (lastPub ? " (" + lastPub + ")" : "") + ".";
@@ -442,6 +456,28 @@ export default async function PackagePage({ params }: Props) {
                   {data.license && (
                     <span>
                       License <span className="text-[var(--text)] font-mono">{data.license}</span>
+                      {data.license_risk && data.license_risk !== "unknown" && (
+                        <span
+                          title={data.commercial_use_notes || undefined}
+                          className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider"
+                          style={{
+                            background:
+                              data.license_risk === "permissive" ? "color-mix(in srgb, var(--green) 15%, transparent)" :
+                              data.license_risk === "weak_copyleft" ? "color-mix(in srgb, var(--yellow) 15%, transparent)" :
+                              data.license_risk === "strong_copyleft" ? "color-mix(in srgb, var(--orange) 15%, transparent)" :
+                              data.license_risk === "network_copyleft" ? "color-mix(in srgb, var(--red) 15%, transparent)" :
+                              "var(--bg-hover)",
+                            color:
+                              data.license_risk === "permissive" ? "var(--green)" :
+                              data.license_risk === "weak_copyleft" ? "var(--yellow)" :
+                              data.license_risk === "strong_copyleft" ? "var(--orange)" :
+                              data.license_risk === "network_copyleft" ? "var(--red)" :
+                              "var(--text-dim)",
+                          }}
+                        >
+                          {data.license_risk.replace("_", " ")}
+                        </span>
+                      )}
                     </span>
                   )}
                   <span className="tabular-nums">

@@ -57,10 +57,15 @@ function SolutionBlock({ text }: { text: string }) {
 function normalizeMatches(raw: unknown): ErrorMatch[] {
   if (!raw || typeof raw !== "object") return [];
   const d = raw as Record<string, unknown>;
-  // /api/error/resolve can return either matches:[] or match:{} or {solution}
-  if (Array.isArray(d.matches)) return d.matches as ErrorMatch[];
+  // /api/error/resolve can return:
+  //   status:"exact_match"     -> d.solution is a FULL OBJECT
+  //   status:"similar_matches" -> d.matches is array
+  //   status:"not_found"       -> d.matches is []
+  //   GET /api/error           -> d.matches is array
+  if (Array.isArray(d.matches) && d.matches.length > 0) return d.matches as ErrorMatch[];
+  if (d.solution && typeof d.solution === "object") return [d.solution as ErrorMatch];
   if (d.match && typeof d.match === "object") return [d.match as ErrorMatch];
-  if (typeof d.solution === "string" && d.solution) return [d as ErrorMatch];
+  if (Array.isArray(d.matches)) return d.matches as ErrorMatch[]; // empty array
   return [];
 }
 
@@ -107,21 +112,31 @@ export default function ErrorsPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ error: q }),
         });
-        if (r.ok) {
-          data = await r.json();
-        }
+        if (r.ok) data = await r.json();
       } catch {
         /* fall through to GET */
       }
 
-      // Fallback: GET /api/error?q=... for free-text search.
-      if (!data) {
-        const g = await fetch(`/api/error?q=${encodeURIComponent(q)}`);
-        if (!g.ok) throw new Error(`Search failed (HTTP ${g.status})`);
-        data = await g.json();
+      let m = normalizeMatches(data);
+
+      // If POST found nothing (not_found), also try GET full-text search on
+      // a shortened query — often matches when exact-match misses.
+      if (m.length === 0) {
+        // Take the first error-like line (heuristic: shortest informative line).
+        const firstLine = q.split("\n").find((l) => l.trim().length >= 10)?.trim() || q;
+        const short = firstLine.slice(0, 200);
+        try {
+          const g = await fetch(`/api/error?q=${encodeURIComponent(short)}`);
+          if (g.ok) {
+            const gdata = await g.json();
+            const gm = normalizeMatches(gdata);
+            if (gm.length > 0) m = gm;
+          }
+        } catch {
+          /* leave m empty */
+        }
       }
 
-      const m = normalizeMatches(data);
       setMatches(m);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Search failed — try a shorter excerpt.");
