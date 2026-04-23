@@ -20,7 +20,7 @@ EMAIL_FROM_NAME = "Vincenzo Rubino - DepScope"
 
 # Dev.to
 DEVTO_API = "https://dev.to/api"
-DEVTO_API_KEY = "VuqtfNaAJifTz4h2ckG3sCdG"
+DEVTO_API_KEY = os.environ.get("DEVTO_API_KEY", "")
 
 DEVTO_TAGS = ["npm", "pypi", "security", "ai", "python", "javascript", "cargo", "dependencies", "opensource", "webdev"]
 DEVTO_KEYWORDS = ["dependency", "dependencies", "package", "npm", "pypi", "cargo", "vulnerability", "supply chain", "mcp", "ai agent", "security audit"]

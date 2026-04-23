@@ -58,7 +58,7 @@ EMAIL_PASS = os.getenv("EMAIL_PASSWORD", "")
 EMAIL_FROM_NAME = "Vincenzo Rubino - DepScope"
 
 # ── Dev.to API key ──
-DEVTO_API_KEY = "VuqtfNaAJifTz4h2ckG3sCdG"
+DEVTO_API_KEY = os.environ.get("DEVTO_API_KEY", "")
 
 
 async def get_pool():
