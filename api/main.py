@@ -3466,9 +3466,9 @@ async def admin_sources(request: Request):
             GROUP BY source ORDER BY calls DESC
         """)
         rapidapi_users = await conn.fetch("""
-            SELECT DISTINCT ip_address, user_agent, MAX(created_at) as last_seen
+            SELECT DISTINCT ip_hash AS ip_address, user_agent, MAX(created_at) as last_seen
             FROM api_usage WHERE source = 'rapidapi'
-            GROUP BY ip_address, user_agent ORDER BY last_seen DESC LIMIT 20
+            GROUP BY ip_hash, user_agent ORDER BY last_seen DESC LIMIT 20
         """)
     return {
         "total": {r["source"]: r["calls"] for r in by_source},
@@ -4224,7 +4224,7 @@ async def admin_overview(request: Request, range: str = "30d"):
                     COUNT(*)                                                AS calls,
                     COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '1 day')
                                                                             AS calls_24h,
-                    COUNT(DISTINCT ip_address)                              AS unique_ips,
+                    COUNT(DISTINCT ip_hash)                              AS unique_ips,
                     COUNT(DISTINCT country)                                 AS unique_countries,
                     COUNT(*) FILTER (WHERE cache_hit)                       AS cache_hits,
                     COUNT(*) FILTER (WHERE status_code >= 400)              AS errors,
@@ -4399,12 +4399,12 @@ async def admin_insights(request: Request):
         suspect_rows = await conn.fetch("""
             SELECT DATE_TRUNC('hour', created_at) AS hr,
                    COUNT(*)                    AS calls,
-                   COUNT(DISTINCT ip_address)  AS ips
+                   COUNT(DISTINCT ip_hash)  AS ips
             FROM api_usage
             WHERE source = 'browser'
             GROUP BY hr
             HAVING COUNT(*) > 200
-               AND COUNT(*)::float / GREATEST(COUNT(DISTINCT ip_address), 1) > 20
+               AND COUNT(*)::float / GREATEST(COUNT(DISTINCT ip_hash), 1) > 20
             ORDER BY calls DESC LIMIT 10
         """)
         suspect_browser_hours = [
@@ -4459,7 +4459,7 @@ async def admin_timeseries(request: Request, range: str = "7d", view: str = "all
                    COUNT(*) AS calls,
                    COUNT(*) FILTER (WHERE cache_hit) AS cache_hits,
                    COUNT(*) FILTER (WHERE status_code >= 400) AS errors,
-                   COUNT(DISTINCT ip_address) AS unique_ips,
+                   COUNT(DISTINCT ip_hash) AS unique_ips,
                    COALESCE(AVG(response_time_ms)::int, 0) AS avg_ms,
                    COALESCE(
                        PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY response_time_ms)::int, 0
@@ -4584,7 +4584,7 @@ async def admin_plan_metrics(request: Request):
             "SELECT COUNT(*) FROM api_usage WHERE created_at > NOW() - INTERVAL '7 days' AND user_agent NOT ILIKE '%bot%' AND user_agent NOT ILIKE '%crawl%' AND user_agent != ''"
         ) or 0
         unique_ips_30d = await conn.fetchval(
-            "SELECT COUNT(DISTINCT ip_address) FROM api_usage WHERE created_at > NOW() - INTERVAL '30 days' AND ip_address IS NOT NULL"
+            "SELECT COUNT(DISTINCT ip_hash) FROM api_usage WHERE created_at > NOW() - INTERVAL '30 days'"
         ) or 0
         users_count = await conn.fetchval("SELECT COUNT(*) FROM users") or 0
         users_by_plan = await conn.fetch(
@@ -5658,7 +5658,7 @@ async def get_savings():
     pool = await get_pool()
     async with pool.acquire() as conn:
         total_checks = await conn.fetchval(
-            "SELECT COUNT(*) FROM api_usage WHERE ip_address NOT IN ('127.0.0.1','::1','10.10.0.140','10.10.0.1','91.134.4.25')"
+            "SELECT COUNT(*) FROM api_usage"
         )
 
     tokens_without = 8500   # avg tokens per check without DepScope
@@ -6345,7 +6345,7 @@ async def intelligence_dashboard(request: Request):
         agent_breakdown = await conn.fetch("""
             SELECT COALESCE(source, 'unknown') AS source,
                    COUNT(*) AS calls,
-                   COUNT(DISTINCT ip_address) AS unique_ips
+                   COUNT(DISTINCT ip_hash) AS unique_ips
             FROM api_usage
             WHERE created_at > NOW() - INTERVAL '7 days' AND COALESCE(source, '') <> ''
             GROUP BY source
@@ -6354,7 +6354,7 @@ async def intelligence_dashboard(request: Request):
         countries = await conn.fetch("""
             SELECT country,
                    COUNT(*) AS calls,
-                   COUNT(DISTINCT ip_address) AS unique_ips
+                   COUNT(DISTINCT ip_hash) AS unique_ips
             FROM api_usage
             WHERE country IS NOT NULL AND created_at > NOW() - INTERVAL '7 days'
             GROUP BY country
@@ -6405,7 +6405,7 @@ async def intelligence_dashboard(request: Request):
         totals = await conn.fetchrow("""
             SELECT COUNT(*) AS calls_7d,
                    COUNT(DISTINCT session_id) AS sessions_7d,
-                   COUNT(DISTINCT ip_address) AS ips_7d,
+                   COUNT(DISTINCT ip_hash) AS ips_7d,
                    AVG(response_time_ms)::INT AS avg_ms_7d,
                    SUM(CASE WHEN cache_hit THEN 1 ELSE 0 END)::FLOAT
                      / GREATEST(COUNT(*),1) AS cache_hit_rate_7d
@@ -6648,7 +6648,7 @@ async def launch_metrics(request: Request):
         # API traffic (last 24h)
         api_24h = await conn.fetchval("SELECT COUNT(*) FROM api_usage WHERE created_at > NOW() - INTERVAL '24 hours'")
         api_total = await conn.fetchval("SELECT COUNT(*) FROM api_usage")
-        api_ips = await conn.fetchval("SELECT COUNT(DISTINCT ip_address) FROM api_usage WHERE created_at > NOW() - INTERVAL '24 hours'")
+        api_ips = await conn.fetchval("SELECT COUNT(DISTINCT ip_hash) FROM api_usage WHERE created_at > NOW() - INTERVAL '24 hours'")
 
     # GitHub (new account)
     gh_stars = gh_forks = gh_watchers = 0
