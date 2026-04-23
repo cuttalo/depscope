@@ -285,8 +285,12 @@ _LICENSE_UNKNOWN = (
 )
 
 
-def _classify_license(raw: str | None) -> dict:
-    """Return {license_id, license_risk, commercial_use_notes}."""
+def _classify_license(raw) -> dict:
+    """Return {license_id, license_risk, commercial_use_notes}. Accepts str|dict|None."""
+    if isinstance(raw, dict):
+        raw = raw.get("spdx_id") or raw.get("type") or raw.get("name") or ""
+    if raw is not None and not isinstance(raw, str):
+        raw = str(raw)
     if not raw:
         return {
             "license_id": None,
@@ -2200,7 +2204,7 @@ def _build_prompt_text(result: dict, cache_age_minutes: int | None = None) -> st
     vcount = vulns.get("count", 0)
     vcrit = vulns.get("critical", 0)
     vhigh = vulns.get("high", 0)
-    license_name = (result.get("license") or "").strip() or "unknown"
+    license_name = str(result.get("license") or "").strip() or "unknown"
     meta = result.get("metadata") or {}
     deprecated = meta.get("deprecated", False)
     deps_total = meta.get("dependencies_count", 0)
@@ -2850,7 +2854,7 @@ async def get_license(ecosystem: str, package: str):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT license FROM packages WHERE ecosystem=$1 AND name=$2", ecosystem, package)
-    spdx = (row["license"] or "").strip() if row else None
+    spdx = str(row["license"] or "").strip() if row else None
     cls = license_class(spdx) if spdx else "unknown"
     return {
         "package": package, "ecosystem": ecosystem,
@@ -4280,7 +4284,7 @@ def _build_recommendation(pkg_data: dict, health: dict, vulns: list, requested_v
     popularity = breakdown.get("popularity", 0) or 0
     community = breakdown.get("community", 0) or 0
     has_description = bool((pkg_data.get("description") or "").strip())
-    has_license = bool((pkg_data.get("license") or "").strip())
+    has_license = bool(str(pkg_data.get("license") or "").strip())
     has_last_published = bool(pkg_data.get("last_published"))
 
     signal_count = sum([
