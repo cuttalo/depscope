@@ -3869,12 +3869,12 @@ async def admin_automation(request: Request):
         ("0 4 * * *",   "compute_intelligence",     LOG_DIR / "intelligence.log"),
         ("0 3 * * *",   "record_health_snapshot",   LOG_DIR / "health_snapshot.log"),
         ("0 10 * * 1",  "generate_weekly_report",   Path("/home/deploy/depscope/data/weekly_report.log")),
-        ("0 */6 * * *", "alerts",                   Path("/tmp/depscope-alerts.log")),
-        ("0 */6 * * *", "preprocess",               Path("/tmp/depscope-preprocess.log")),
-        ("0 */12 * * *", "fetch_github_stats",      Path("/tmp/depscope-github-stats.log")),
-        ("0 6,18 * * *", "fetch_downloads",         Path("/tmp/depscope-downloads.log")),
-        ("0 2 * * *",   "expand_db",                Path("/tmp/depscope-expand.log")),
-        ("0 6 * * *",   "daily_report",             Path("/tmp/depscope-report.log")),
+        ("0 */6 * * *", "alerts",                   LOG_DIR / "alerts.log"),
+        ("0 */6 * * *", "preprocess",               LOG_DIR / "preprocess.log"),
+        ("0 */12 * * *", "fetch_github_stats",      LOG_DIR / "github-stats.log"),
+        ("0 6,18 * * *", "fetch_downloads",         LOG_DIR / "downloads.log"),
+        ("0 2 * * *",   "expand_db",                LOG_DIR / "expand.log"),
+        ("0 6 * * *",   "daily_report",             LOG_DIR / "report.log"),
         ("0 */4 * * *", "marketing_agent",          Path("/tmp/marketing_agent.log")),
     ]
 
