@@ -1970,8 +1970,8 @@ async def check_package(ecosystem: str, package: str, version: str = None, reque
     """
     start = time.time()
     ecosystem = ecosystem.lower()
-    if ecosystem not in ("npm", "pypi", "cargo", "go", "composer", "maven", "nuget", "rubygems", "pub", "hex", "swift", "cocoapods", "cpan", "hackage", "cran", "conda", "homebrew", "jsr"):
-        raise HTTPException(400, f"Unsupported ecosystem: {ecosystem}. Supported: npm, pypi, cargo, go, composer, maven, nuget, rubygems, pub, hex, swift, cocoapods, cpan, hackage, cran, conda, homebrew, jsr")
+    if ecosystem not in ("npm", "pypi", "cargo", "go", "composer", "maven", "nuget", "rubygems", "pub", "hex", "swift", "cocoapods", "cpan", "hackage", "cran", "conda", "homebrew", "jsr", "julia"):
+        raise HTTPException(400, f"Unsupported ecosystem: {ecosystem}. Supported: npm, pypi, cargo, go, composer, maven, nuget, rubygems, pub, hex, swift, cocoapods, cpan, hackage, cran, conda, homebrew, jsr, julia")
 
     stdlib_hint = lookup_stdlib(ecosystem, package)
     if stdlib_hint:
@@ -2462,7 +2462,7 @@ async def get_prompt(ecosystem: str, package: str, version: str = None, request:
     """
     start = time.time()
     ecosystem = ecosystem.lower()
-    if ecosystem not in ("npm", "pypi", "cargo", "go", "composer", "maven", "nuget", "rubygems", "pub", "hex", "swift", "cocoapods", "cpan", "hackage", "cran", "conda", "homebrew", "jsr"):
+    if ecosystem not in ("npm", "pypi", "cargo", "go", "composer", "maven", "nuget", "rubygems", "pub", "hex", "swift", "cocoapods", "cpan", "hackage", "cran", "conda", "homebrew", "jsr", "julia"):
         return PlainTextResponse(
             content=f"Unsupported ecosystem: {ecosystem}.\n",
             status_code=400,
@@ -3599,7 +3599,7 @@ async def compare_packages(ecosystem: str, packages_csv: str, request: Request =
     """
     start = time.time()
     ecosystem = ecosystem.lower()
-    if ecosystem not in ("npm", "pypi", "cargo", "go", "composer", "maven", "nuget", "rubygems", "pub", "hex", "swift", "cocoapods", "cpan", "hackage", "cran", "conda", "homebrew", "jsr"):
+    if ecosystem not in ("npm", "pypi", "cargo", "go", "composer", "maven", "nuget", "rubygems", "pub", "hex", "swift", "cocoapods", "cpan", "hackage", "cran", "conda", "homebrew", "jsr", "julia"):
         raise HTTPException(400, f"Unsupported ecosystem: {ecosystem}")
 
     names = [n.strip() for n in packages_csv.split(",") if n.strip()]
@@ -3814,7 +3814,7 @@ async def scan_dependencies(request: Request):
         raise HTTPException(400, "format must be one of: native, cyclonedx, spdx")
     include_transitive = bool(body.get("include_transitive"))
 
-    if ecosystem not in ("npm", "pypi", "cargo", "go", "composer", "maven", "nuget", "rubygems", "pub", "hex", "swift", "cocoapods", "cpan", "hackage", "cran", "conda", "homebrew", "jsr"):
+    if ecosystem not in ("npm", "pypi", "cargo", "go", "composer", "maven", "nuget", "rubygems", "pub", "hex", "swift", "cocoapods", "cpan", "hackage", "cran", "conda", "homebrew", "jsr", "julia"):
         raise HTTPException(400, f"Unsupported ecosystem: {ecosystem}")
     if not packages or not isinstance(packages, dict):
         raise HTTPException(400, "Provide 'packages' as a dict of {name: version_constraint}")

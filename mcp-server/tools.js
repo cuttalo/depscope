@@ -10,7 +10,7 @@ const API_KEY = process.env.DEPSCOPE_API_KEY || "";
 export const ECOSYSTEMS = [
   "npm", "pypi", "cargo", "go", "composer", "maven", "nuget", "rubygems",
   "pub", "hex", "swift", "cocoapods", "cpan", "hackage", "cran", "conda",
-  "homebrew", "jsr",
+  "homebrew", "jsr", "julia",
 ];
 
 // Tool list is ordered from highest-value/most-common to long-tail.

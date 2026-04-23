@@ -293,6 +293,7 @@ const ECOSYSTEM_LABELS: Record<string, string> = {
   conda: "Conda",
   homebrew: "Homebrew",
   jsr: "JSR",
+  julia: "Julia",
 };
 
 export default function Home() {
@@ -300,7 +301,7 @@ export default function Home() {
   const [ecosystem, setEcosystem] = useState("npm");
   const [availableEcosystems, setAvailableEcosystems] = useState<string[]>([
     "npm", "pypi", "cargo", "go", "composer", "maven", "nuget", "rubygems",
-    "pub", "hex", "swift", "cocoapods", "cpan", "hackage", "cran", "conda", "homebrew", "jsr",
+    "pub", "hex", "swift", "cocoapods", "cpan", "hackage", "cran", "conda", "homebrew", "jsr", "julia",
   ]);
   const [stats, setStats] = useState<StatsData | null>(null);
 

@@ -42,6 +42,7 @@ const LABELS: Record<string, { name: string; language: string; href: string; col
   conda:     { name: "Conda",      language: "Python (scientific)",     href: "/ecosystems/conda",      color: "#43b02a" },
   homebrew:  { name: "Homebrew",   language: "macOS / Linux formulae",  href: "/ecosystems/homebrew",   color: "#f5a623" },
   jsr:       { name: "JSR",        language: "TypeScript / Deno / Bun / Node", href: "/ecosystems/jsr",        color: "#f7df1e" },
+  julia:     { name: "Julia",      language: "Scientific / AI / ML",                 href: "/ecosystems/julia",      color: "#9558b2" },
 };
 
 async function fetchStats(): Promise<StatsResponse> {

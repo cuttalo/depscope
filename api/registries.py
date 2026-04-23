@@ -1678,6 +1678,110 @@ async def fetch_jsr(name: str) -> dict | None:
         return None
 
 
+
+async def fetch_julia(name: str) -> dict | None:
+    """Fetch Julia pkg from JuliaRegistries/General GitHub. Enriches with GH repo data."""
+    name = (name or "").strip()
+    if not name:
+        return None
+    # First letter subdir — special: names starting with J might live under J
+    # Registry convention: uppercase first char of the package name.
+    first = name[0].upper()
+    base = f"https://raw.githubusercontent.com/JuliaRegistries/General/master/{first}/{name}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{base}/Package.toml", timeout=aiohttp.ClientTimeout(total=8)) as r:
+                if r.status != 200:
+                    return None
+                pkg_toml = await r.text()
+            async with session.get(f"{base}/Versions.toml", timeout=aiohttp.ClientTimeout(total=8)) as vr:
+                ver_toml = await vr.text() if vr.status == 200 else ""
+
+        # Tiny TOML-ish parser — these files are simple.
+        repo = ""
+        uuid_val = ""
+        for line in pkg_toml.splitlines():
+            line = line.strip()
+            if line.startswith("repo "):
+                m = re.search(r"=\s*\"([^\"]+)\"", line)
+                if m: repo = m.group(1)
+            elif line.startswith("uuid "):
+                m = re.search(r"=\s*\"([^\"]+)\"", line)
+                if m: uuid_val = m.group(1)
+
+        versions = []
+        for line in ver_toml.splitlines():
+            line = line.strip()
+            m = re.match(r'\["([0-9][^"]*)"\]', line)
+            if m:
+                versions.append(m.group(1))
+        # Sort SemVer-ish
+        def _ver_key(v):
+            try:
+                parts = [int(x) for x in re.split(r"\D+", v) if x]
+                return tuple(parts)
+            except Exception:
+                return (0,)
+        versions_sorted = sorted(versions, key=_ver_key)
+        latest = versions_sorted[-1] if versions_sorted else None
+
+        # Clean repo URL (strip .git and trailing slash)
+        clean_repo = repo.rstrip("/")
+        if clean_repo.endswith(".git"):
+            clean_repo = clean_repo[:-4]
+
+        # GH enrichment: description, license, stars
+        description = ""
+        license_name = ""
+        if "github.com" in clean_repo:
+            try:
+                m = re.search(r"github\.com[:/]([^/]+)/([^/]+)", clean_repo)
+                if m:
+                    owner, repo_name = m.group(1), m.group(2)
+                    # Use the rotating GH token pool
+                    from api.registries import _pick_gh_token
+                    tok = _pick_gh_token()
+                    headers = {"Accept": "application/vnd.github+json"}
+                    if tok:
+                        headers["Authorization"] = f"Bearer {tok}"
+                    async with aiohttp.ClientSession() as s2:
+                        async with s2.get(
+                            f"https://api.github.com/repos/{owner}/{repo_name}",
+                            headers=headers,
+                            timeout=aiohttp.ClientTimeout(total=6),
+                        ) as gr:
+                            if gr.status == 200:
+                                gh = await gr.json()
+                                description = gh.get("description") or ""
+                                lic = (gh.get("license") or {}).get("spdx_id") or ""
+                                if lic and lic != "NOASSERTION":
+                                    license_name = lic
+            except Exception:
+                pass
+
+        return {
+            "ecosystem": "julia",
+            "name": name,
+            "latest_version": latest,
+            "description": description,
+            "license": license_name,
+            "homepage": clean_repo,
+            "repository": clean_repo,
+            "downloads_weekly": None,  # Julia registry doesn't expose download counts
+            "maintainers_count": 1,  # GH owner only (registry doesn't expose)
+            "deprecated": False,
+            "deprecated_message": None,
+            "first_published": None,
+            "last_published": None,
+            "versions": versions_sorted[-20:],
+            "all_version_count": len(versions_sorted),
+            "dependencies": [],  # Deps/*.toml per-version; skip for now
+            "_julia_uuid": uuid_val,
+        }
+    except Exception:
+        return None
+
+
 FETCHERS = {
     "npm": fetch_npm,
     "pypi": fetch_pypi,
@@ -1697,6 +1801,7 @@ FETCHERS = {
     "conda": fetch_conda,
     "homebrew": fetch_homebrew,
     "jsr": fetch_jsr,
+    "julia": fetch_julia,
 }
 
 
