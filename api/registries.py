@@ -716,21 +716,28 @@ async def fetch_rubygems(name: str) -> dict | None:
 
 
 async def fetch_github_stats(repo_url: str) -> dict | None:
-    """Fetch GitHub repo stats from the public API (no token, 60 req/h)."""
+    """Fetch GitHub repo stats via API. Uses GH_TOKEN (5000/h) if set, else anon (60/h)."""
     if not repo_url or "github.com" not in repo_url:
         return None
-    # Extract owner/repo from URL
-    match = re.search(r'github\.com/([^/]+)/([^/\s#?]+)', repo_url)
+    # Extract owner/repo from URL (handles http://, https://, .git suffix, trailing slash)
+    match = re.search(r'github\.com[/:]([^/]+)/([^/\s#?]+)', repo_url)
     if not match:
         return None
     owner, repo = match.group(1), match.group(2)
-    if repo.endswith('.git'):
-        repo = repo[:-4]
+    repo = repo.rstrip('/').removesuffix('.git') if hasattr(str, 'removesuffix') else (repo.rstrip('/')[:-4] if repo.rstrip('/').endswith('.git') else repo.rstrip('/'))
 
+    import os as _os
+    gh_token = _os.environ.get("GH_TOKEN") or _os.environ.get("GITHUB_TOKEN")
     api_url = f"https://api.github.com/repos/{owner}/{repo}"
     try:
         async with aiohttp.ClientSession() as session:
-            headers = {"Accept": "application/vnd.github.v3+json"}
+            headers = {
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "DepScope/1.0 (+https://depscope.dev)",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            if gh_token:
+                headers["Authorization"] = f"Bearer {gh_token}"
             async with session.get(api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status != 200:
                     return None
