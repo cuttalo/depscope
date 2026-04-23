@@ -54,6 +54,7 @@ export default function Nav() {
     },
     { href: isZh ? "/zh/integrate" : "/integrate", label: "Integrate", match: (p: string) => p.includes("integrate") },
     { href: isZh ? "/zh/api-docs" : "/api-docs", label: "API Docs", match: (p: string) => p.includes("api-docs") },
+    { href: "/benchmark", label: "Benchmark", match: (p: string) => p === "/benchmark" },
     { href: "/stats", label: "Coverage", match: (p: string) => p === "/stats" },
   ];
 
@@ -227,6 +228,7 @@ export default function Nav() {
               <div className="px-3 pt-3 pb-1 text-[10px] font-mono uppercase tracking-wider text-[var(--text-faded)]">Build</div>
               <a href="/integrate" className="block px-3 py-2.5 rounded hover:bg-[var(--bg-hover)]">Integrate</a>
               <a href="/api-docs" className="block px-3 py-2.5 rounded hover:bg-[var(--bg-hover)]">API Docs</a>
+              <a href="/benchmark" className="block px-3 py-2.5 rounded hover:bg-[var(--bg-hover)]">Benchmark</a>
               <a href="/stats" className="block px-3 py-2.5 rounded hover:bg-[var(--bg-hover)]">Coverage</a>
               <div className="px-3 pt-3 pb-1 text-[10px] font-mono uppercase tracking-wider text-[var(--text-faded)]">Account</div>
               <a href="/login" className="block px-3 py-2.5 rounded hover:bg-[var(--bg-hover)]">Sign in</a>

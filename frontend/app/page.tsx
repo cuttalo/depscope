@@ -419,6 +419,8 @@ export default function Home() {
             <span className="tabular-nums"><span className="text-[var(--text-dim)]">{stats?.ecosystems?.length || 17}</span> ecosystems</span>
             <span>·</span>
             <span className="text-[var(--green)]">Free · no auth</span>
+            <span>·</span>
+            <a href="/benchmark" className="text-[var(--accent)] hover:underline">Hallucination Benchmark →</a>
           </div>
         </header>
 
