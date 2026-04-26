@@ -20,10 +20,16 @@ from typing import Optional
 import aiohttp
 import asyncpg
 
-# Add parent to path to import from api/
-sys.path.insert(0, "/home/deploy/depscope")
-
-from api.config import DATABASE_URL  # noqa: E402
+# Try to import DATABASE_URL from api.config, fallback to environment variable
+try:
+    sys.path.insert(0, "/home/deploy/depscope")
+    from api.config import DATABASE_URL  # noqa: E402
+except (ImportError, ModuleNotFoundError):
+    # Fallback to environment variable for local testing
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    if not DATABASE_URL:
+        print("❌ DATABASE_URL not found in api.config or environment")
+        sys.exit(1)
 
 
 def get_github_token() -> Optional[str]:
@@ -83,6 +89,18 @@ async def fetch_bug_issues(
         return []
 
 
+def pick_severity(labels: list) -> str:
+    """Map GitHub labels to severity scale (critical/high/medium/low)."""
+    label_text = " ".join(str(lab.get("name", "")) if isinstance(lab, dict) else str(lab) for lab in labels).lower()
+    if any(k in label_text for k in ("critical", "p0", "security", "crash")):
+        return "critical"
+    if any(k in label_text for k in ("high", "p1", "major")):
+        return "high"
+    if any(k in label_text for k in ("low", "p3", "minor", "trivial")):
+        return "low"
+    return "medium"
+
+
 async def insert_bug(
     conn: asyncpg.Connection,
     pkg_id: int,
@@ -101,27 +119,40 @@ async def insert_bug(
         if not title or not number:
             return False
 
+        # Extract labels
+        labels_raw = issue.get("labels") or []
+        labels = [
+            lab.get("name") if isinstance(lab, dict) else str(lab)
+            for lab in labels_raw
+        ]
+
         bug_id = f"github:{number}"
         status = "fixed" if issue.get("state") == "closed" else "open"
+        severity = pick_severity(labels_raw)
 
         result = await conn.execute(
             """
             INSERT INTO known_bugs(
                 package_id, ecosystem, package_name,
-                bug_id, title, description, status,
-                source, source_url
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                affected_version, fixed_version, bug_id,
+                title, description, severity, status,
+                source, source_url, labels
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ON CONFLICT (ecosystem, package_name, bug_id) DO NOTHING
             """,
             pkg_id,
             ecosystem,
             pkg_name,
+            None,  # affected_version (not parsed from issue)
+            None,  # fixed_version (not parsed from issue)
             bug_id,
             title[:2000],
             body or None,
+            severity,
             status,
             "github_issues",
             html_url,
+            labels[:20],  # Limit to 20 labels
         )
         # asyncpg returns "INSERT 0 1" on success, "INSERT 0 0" on conflict
         return result and result.endswith("1")
