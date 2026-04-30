@@ -86,7 +86,7 @@ Tools (22):
 
 ─── Scale & trust ───────────────────────────────────────────────
 
-  1.2M+ packages · 19 ecosystems · 19,348 CVEs (99% EPSS-enriched)
+  1.2M+ packages · 19 ecosystems · 19,349 CVEs (99% EPSS-enriched)
   1,577 CISA KEV entries · 224,363 malicious advisories (OpenSSF)
     3,912 breaking changes · 1,344 known non-CVE bugs
       653 curated alternative pairs · 597 typosquat candidates
@@ -132,3 +132,15 @@ magic-link login at https://depscope.dev/login.
 
 Built by Cuttalo srl, Italy. Positioning: save tokens, save energy,
 ship safer code.
+\n\n─── DATA ACCURACY & LIABILITY (as-is, no warranty) ──────────────
+
+  Data is provided AS IS, without warranty of any kind.
+  Aggregated from public registries (npm, PyPI, Cargo, OSV.dev,
+  GitHub Advisory, CISA KEV, OpenSSF) — third-party feeds may be
+  inaccurate, incomplete, or outdated. Health scores are heuristic,
+  not authoritative. Verify before installing.
+
+  By calling any DepScope endpoint or downloading any dataset, you
+  accept the Terms (https://depscope.dev/terms) and Data Accuracy
+  Notice (https://depscope.dev/data-accuracy). Aggregate liability
+  capped at EUR 0 (free service). User assumes all risk.\n
