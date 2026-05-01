@@ -86,7 +86,7 @@ Tools (22):
 
 ─── Scale & trust ───────────────────────────────────────────────
 
-  1.2M+ packages · 19 ecosystems · 19,399 CVEs (99% EPSS-enriched)
+  1.2M+ packages · 19 ecosystems · 19,400 CVEs (99% EPSS-enriched)
   1,577 CISA KEV entries · 224,363 malicious advisories (OpenSSF)
     3,912 breaking changes · 1,344 known non-CVE bugs
       653 curated alternative pairs · 597 typosquat candidates
