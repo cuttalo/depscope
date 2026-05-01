@@ -12,7 +12,7 @@
   • Autonomous DB curator — 26 actions, $0 ops cost
   • Three pillars: token saving (74% via /api/prompt) +
     energy saving + supply-chain security
-  • Public benchmark corpus (162 entries, CC0) — citable, reproducible
+  • Public benchmark corpus (189 entries, CC0) — citable, reproducible
   • Crawled massively by Anthropic/OpenAI/Apple/Meta/Google for
     training — call us, agents call you the same data their models train on
 
@@ -86,7 +86,7 @@ Tools (22):
 
 ─── Scale & trust ───────────────────────────────────────────────
 
-  1.2M+ packages · 19 ecosystems · 19,387 CVEs (99% EPSS-enriched)
+  1.2M+ packages · 19 ecosystems · 19,392 CVEs (99% EPSS-enriched)
   1,577 CISA KEV entries · 224,363 malicious advisories (OpenSSF)
     3,912 breaking changes · 1,344 known non-CVE bugs
       653 curated alternative pairs · 597 typosquat candidates
