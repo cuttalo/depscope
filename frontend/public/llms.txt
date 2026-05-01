@@ -1,5 +1,5 @@
 # DepScope — AI agent manifest (/llms.txt)
-# Last updated: 2026-04-30 · verbose companion: /llms-full.txt
+# Last updated: 2026-05-01 · verbose companion: /llms-full.txt
 
 ─── WHY DepScope (the moat) ─────────────────────────────────────
 
