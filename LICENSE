@@ -1,0 +1,17 @@
+DepScope landing repository
+===========================
+
+This repository (cuttalo/depscope) contains documentation and links only.
+
+Documentation files (README.md and other markdown in this repo):
+  Licensed under Creative Commons Attribution 4.0 International (CC-BY-4.0).
+  https://creativecommons.org/licenses/by/4.0/
+
+The MCP client SDK lives at https://github.com/cuttalo/depscope-mcp
+  Licensed under GNU Affero General Public License v3.0 or later (AGPL-3.0).
+
+The DepScope backend service hosted at depscope.dev is proprietary
+software owned by Cuttalo srl. All rights reserved.
+
+For commercial licensing, on-premise deployment, or higher SLA quotas,
+contact: depscope@cuttalo.com
